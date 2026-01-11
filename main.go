@@ -19,6 +19,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -126,21 +127,40 @@ var singleQuotePattern = regexp.MustCompile(`'[^']*'`)
 // Regex for redirections
 var redirPattern = regexp.MustCompile(`(\d*)>&(\d*)`)
 
+// osExit is a variable so it can be mocked in tests
+var osExit = os.Exit
+
 func main() {
+	osExit(run(os.Stdin, os.Stdout))
+}
+
+// run executes the hook logic and returns the exit code.
+// It returns 0 in all cases (rejection is silent, approval outputs JSON).
+func run(stdin io.Reader, stdout io.Writer) int {
+	approved, reason := process(stdin)
+	if approved {
+		stdout.Write([]byte(formatApproval(reason)))
+	}
+	return 0
+}
+
+// process reads from r and returns whether the command should be approved and the reason.
+// Returns false for parse errors, non-Bash tools, dangerous patterns, or unsafe commands.
+func process(r io.Reader) (approved bool, reason string) {
 	var input HookInput
-	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
-		os.Exit(0)
+	if err := json.NewDecoder(r).Decode(&input); err != nil {
+		return false, ""
 	}
 
 	if input.ToolName != "Bash" {
-		os.Exit(0)
+		return false, ""
 	}
 
 	cmd := input.ToolInput["command"]
 
 	// Reject dangerous constructs
 	if dangerousPattern.MatchString(cmd) {
-		os.Exit(0)
+		return false, ""
 	}
 
 	segments := splitCommandChain(cmd)
@@ -148,22 +168,22 @@ func main() {
 
 	for _, segment := range segments {
 		coreCmd, wrappers := stripWrappers(segment)
-		reason := checkSafe(coreCmd)
-		if reason == "" {
-			os.Exit(0) // One unsafe segment = reject entire command
+		r := checkSafe(coreCmd)
+		if r == "" {
+			return false, "" // One unsafe segment = reject entire command
 		}
 		if len(wrappers) > 0 {
-			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+reason)
+			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+r)
 		} else {
-			reasons = append(reasons, reason)
+			reasons = append(reasons, r)
 		}
 	}
 
-	approve(strings.Join(reasons, " | "))
+	return true, strings.Join(reasons, " | ")
 }
 
-// approve outputs approval JSON and exits
-func approve(reason string) {
+// formatApproval returns the JSON approval output with a trailing newline
+func formatApproval(reason string) string {
 	output := HookOutput{
 		HookSpecificOutput: HookSpecificOutput{
 			HookEventName:            "PreToolUse",
@@ -171,8 +191,8 @@ func approve(reason string) {
 			PermissionDecisionReason: reason,
 		},
 	}
-	json.NewEncoder(os.Stdout).Encode(output)
-	os.Exit(0)
+	data, _ := json.Marshal(output)
+	return string(data) + "\n"
 }
 
 // splitCommandChain splits command into segments on &&, ||, ;, |

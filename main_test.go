@@ -11,6 +11,190 @@ import (
 )
 
 // =============================================================================
+// main() Tests
+// =============================================================================
+
+func TestMainFunction(t *testing.T) {
+	// Save original stdin and osExit
+	origStdin := os.Stdin
+	origExit := osExit
+	defer func() {
+		os.Stdin = origStdin
+		osExit = origExit
+	}()
+
+	// Create a pipe to provide input
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+
+	// Write test input
+	go func() {
+		w.WriteString(`{"tool_name":"Bash","tool_input":{"command":"git status"}}`)
+		w.Close()
+	}()
+
+	// Replace stdin
+	os.Stdin = r
+
+	// Capture exit code
+	var exitCode int
+	osExit = func(code int) {
+		exitCode = code
+		// Don't actually exit during tests
+	}
+
+	// Call main
+	main()
+
+	if exitCode != 0 {
+		t.Errorf("main() exitCode = %d, want 0", exitCode)
+	}
+}
+
+// =============================================================================
+// run() Tests
+// =============================================================================
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectOutput bool // whether we expect JSON output
+	}{
+		// Safe command - should produce output
+		{"safe command", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, true},
+		// Unsafe command - no output
+		{"unsafe command", `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`, false},
+		// Non-Bash tool - no output
+		{"non-Bash tool", `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`, false},
+		// Invalid JSON - no output
+		{"invalid JSON", "invalid json", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			exitCode := run(strings.NewReader(tt.input), &stdout)
+
+			if exitCode != 0 {
+				t.Errorf("run() exitCode = %d, want 0", exitCode)
+			}
+
+			if tt.expectOutput {
+				if stdout.Len() == 0 {
+					t.Error("run() expected output, got none")
+				}
+				// Verify it's valid JSON
+				var output HookOutput
+				if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
+					t.Errorf("run() output is not valid JSON: %v", err)
+				}
+			} else {
+				if stdout.Len() != 0 {
+					t.Errorf("run() expected no output, got %q", stdout.String())
+				}
+			}
+		})
+	}
+}
+
+// =============================================================================
+// process() Tests
+// =============================================================================
+
+func TestProcess(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectApproved bool
+		expectReason   string
+	}{
+		// Safe commands
+		{"simple git status", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, true, "git read op"},
+		{"pytest", `{"tool_name":"Bash","tool_input":{"command":"pytest"}}`, true, "pytest"},
+		{"chained safe", `{"tool_name":"Bash","tool_input":{"command":"git add . && git status"}}`, true, "git write op | git read op"},
+		{"with wrapper", `{"tool_name":"Bash","tool_input":{"command":"timeout 30 pytest -v"}}`, true, "timeout + pytest"},
+		{"env vars wrapper", `{"tool_name":"Bash","tool_input":{"command":"FOO=bar pytest"}}`, true, "env vars + pytest"},
+		{"complex chain", `{"tool_name":"Bash","tool_input":{"command":"git status && pytest && echo done"}}`, true, "git read op | pytest | echo"},
+		{"venv python", `{"tool_name":"Bash","tool_input":{"command":".venv/bin/python script.py"}}`, true, ".venv + python"},
+
+		// Unsafe commands
+		{"dangerous $()", `{"tool_name":"Bash","tool_input":{"command":"echo $(whoami)"}}`, false, ""},
+		{"dangerous backtick", "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo `whoami`\"}}", false, ""},
+		{"unsafe rm", `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`, false, ""},
+		{"unsafe in chain", `{"tool_name":"Bash","tool_input":{"command":"git status && rm -rf /"}}`, false, ""},
+		{"sudo", `{"tool_name":"Bash","tool_input":{"command":"sudo anything"}}`, false, ""},
+
+		// Non-Bash tool
+		{"non-Bash tool", `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`, false, ""},
+
+		// Invalid JSON
+		{"invalid JSON", "invalid json {{{", false, ""},
+
+		// Empty command (gets approved with empty reason since no unsafe segments)
+		{"empty command", `{"tool_name":"Bash","tool_input":{"command":""}}`, true, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			approved, reason := process(strings.NewReader(tt.input))
+			if approved != tt.expectApproved {
+				t.Errorf("process() approved = %v, want %v", approved, tt.expectApproved)
+			}
+			if reason != tt.expectReason {
+				t.Errorf("process() reason = %q, want %q", reason, tt.expectReason)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// formatApproval() Tests
+// =============================================================================
+
+func TestFormatApproval(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason string
+	}{
+		{"simple reason", "pytest"},
+		{"complex reason", "timeout + pytest | git read op"},
+		{"empty reason", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatApproval(tt.reason)
+
+			// Should end with newline
+			if !strings.HasSuffix(result, "\n") {
+				t.Error("formatApproval() should end with newline")
+			}
+
+			// Should be valid JSON (without trailing newline)
+			var output HookOutput
+			if err := json.Unmarshal([]byte(strings.TrimSuffix(result, "\n")), &output); err != nil {
+				t.Errorf("formatApproval() returned invalid JSON: %v", err)
+				return
+			}
+
+			// Verify structure
+			if output.HookSpecificOutput.HookEventName != "PreToolUse" {
+				t.Errorf("HookEventName = %q, want %q", output.HookSpecificOutput.HookEventName, "PreToolUse")
+			}
+			if output.HookSpecificOutput.PermissionDecision != "allow" {
+				t.Errorf("PermissionDecision = %q, want %q", output.HookSpecificOutput.PermissionDecision, "allow")
+			}
+			if output.HookSpecificOutput.PermissionDecisionReason != tt.reason {
+				t.Errorf("PermissionDecisionReason = %q, want %q", output.HookSpecificOutput.PermissionDecisionReason, tt.reason)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // splitCommandChain() Tests
 // =============================================================================
 
