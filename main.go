@@ -18,11 +18,16 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // HookInput represents the JSON input from Claude Code
@@ -49,66 +54,36 @@ type Pattern struct {
 	Name  string
 }
 
-// Safe wrappers that can prefix any safe command
-var wrapperPatterns = []Pattern{
-	{regexp.MustCompile(`^timeout\s+\d+\s+`), "timeout"},
-	{regexp.MustCompile(`^nice\s+(-n\s*\d+\s+)?`), "nice"},
-	{regexp.MustCompile(`^env\s+`), "env"},
-	{regexp.MustCompile(`^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+`), "env vars"},
-	// Virtual env paths: .venv/bin/, ../.venv/bin/, /abs/path/.venv/bin/, venv/bin/
-	{regexp.MustCompile(`^(\.\./)*\.?venv/bin/`), ".venv"},
-	{regexp.MustCompile(`^/[^\s]+/\.?venv/bin/`), ".venv"},
-	// do (loop body prefix)
-	{regexp.MustCompile(`^do\s+`), "do"},
+// PatternEntry represents a pattern in the TOML config file
+type PatternEntry struct {
+	Pattern string `toml:"pattern"`
+	Name    string `toml:"name"`
 }
 
-// Safe core command patterns
-var safeCommands = []Pattern{
-	// git read operations (with optional -C flag)
-	{regexp.MustCompile(`^git\s+(-C\s+\S+\s+)?(diff|log|status|show|branch|stash\s+list|bisect|worktree\s+list|fetch)\b`), "git read op"},
-	// git write operations
-	{regexp.MustCompile(`^git\s+(-C\s+\S+\s+)?(add|checkout|merge|rebase|stash)\b`), "git write op"},
-	// pytest
-	{regexp.MustCompile(`^pytest\b`), "pytest"},
-	// python
-	{regexp.MustCompile(`^python\b`), "python"},
-	// ruff (python linter/formatter)
-	{regexp.MustCompile(`^ruff\b`), "ruff"},
-	// uv / uvx
-	{regexp.MustCompile(`^uv\s+(pip|run|sync|venv|add|remove|lock)\b`), "uv"},
-	{regexp.MustCompile(`^uvx\b`), "uvx"},
-	// npm / npx
-	{regexp.MustCompile(`^npm\s+(install|run|test|build|ci)\b`), "npm"},
-	{regexp.MustCompile(`^npx\b`), "npx"},
-	// cargo
-	{regexp.MustCompile(`^cargo\s+(build|test|run|check|clippy|fmt|clean)\b`), "cargo"},
-	// maturin (rust python bindings)
-	{regexp.MustCompile(`^maturin\s+(develop|build)\b`), "maturin"},
-	// make
-	{regexp.MustCompile(`^make\b`), "make"},
-	// common read-only commands
-	{regexp.MustCompile(`^(ls|cat|head|tail|wc|find|grep|rg|file|which|pwd|du|df|curl|sort|uniq|cut|tr|awk|sed|xargs)\b`), "read-only"},
-	// touch (update timestamps, create empty files)
-	{regexp.MustCompile(`^touch\b`), "touch"},
-	// shell builtins for control flow
-	{regexp.MustCompile(`^(true|false|exit(\s+\d+)?)$`), "shell builtin"},
-	// pkill/kill (process management)
-	{regexp.MustCompile(`^(pkill|kill)\b`), "process mgmt"},
-	// echo (often used for logging/separators in chained commands)
-	{regexp.MustCompile(`^echo\b`), "echo"},
-	// cd (change directory, often first in a chain)
-	{regexp.MustCompile(`^cd\s`), "cd"},
-	// source/. (activate scripts, set env)
-	{regexp.MustCompile(`^(source|\.) [^\s]*venv/bin/activate`), "venv activate"},
-	// sleep (delays, often used in scripts)
-	{regexp.MustCompile(`^sleep\s`), "sleep"},
-	// variable assignment (VAR=value, VAR=$!, etc.)
-	{regexp.MustCompile(`^[A-Z_][A-Z0-9_]*=\S*$`), "var assignment"},
-	// for/while loops and loop constructs
-	{regexp.MustCompile(`^for\s+\w+\s+in\s`), "for loop"},
-	{regexp.MustCompile(`^while\s`), "while loop"},
-	{regexp.MustCompile(`^done$`), "done"},
+// WrapperConfig represents the wrappers.toml file structure
+type WrapperConfig struct {
+	Wrapper []PatternEntry `toml:"wrapper"`
 }
+
+// CommandConfig represents the commands.toml file structure
+type CommandConfig struct {
+	Command []PatternEntry `toml:"command"`
+}
+
+//go:embed config/wrappers.toml
+var defaultWrappers []byte
+
+//go:embed config/commands.toml
+var defaultCommands []byte
+
+// Safe wrappers that can prefix any safe command (initialized by initConfig)
+var wrapperPatterns []Pattern
+
+// Safe core command patterns (initialized by initConfig)
+var safeCommands []Pattern
+
+// configInitialized tracks whether config has been loaded
+var configInitialized bool
 
 // Regex for dangerous constructs
 var dangerousPattern = regexp.MustCompile(`\$\(|` + "`")
@@ -130,7 +105,130 @@ var redirPattern = regexp.MustCompile(`(\d*)>&(\d*)`)
 // osExit is a variable so it can be mocked in tests
 var osExit = os.Exit
 
+// getConfigDir returns the config directory path.
+// Uses MMI_CONFIG env var if set, otherwise ~/.config/mmi
+func getConfigDir() (string, error) {
+	if dir := os.Getenv("MMI_CONFIG"); dir != "" {
+		return dir, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "mmi"), nil
+}
+
+// ensureConfigFiles creates the config directory and writes default config files if they don't exist.
+func ensureConfigFiles(configDir string) error {
+	// Create config directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Write default wrappers.toml if it doesn't exist
+	wrappersPath := filepath.Join(configDir, "wrappers.toml")
+	if _, err := os.Stat(wrappersPath); os.IsNotExist(err) {
+		if err := os.WriteFile(wrappersPath, defaultWrappers, 0644); err != nil {
+			return fmt.Errorf("failed to write wrappers.toml: %w", err)
+		}
+	}
+
+	// Write default commands.toml if it doesn't exist
+	commandsPath := filepath.Join(configDir, "commands.toml")
+	if _, err := os.Stat(commandsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(commandsPath, defaultCommands, 0644); err != nil {
+			return fmt.Errorf("failed to write commands.toml: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// loadPatterns loads patterns from a TOML file and compiles them to regex.
+func loadPatterns(data []byte, key string) ([]Pattern, error) {
+	var config map[string][]PatternEntry
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse TOML: %w", err)
+	}
+
+	entries := config[key]
+	patterns := make([]Pattern, 0, len(entries))
+	for _, entry := range entries {
+		re, err := regexp.Compile(entry.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern %q: %w", entry.Pattern, err)
+		}
+		patterns = append(patterns, Pattern{Regex: re, Name: entry.Name})
+	}
+	return patterns, nil
+}
+
+// loadEmbeddedDefaults loads patterns from the embedded default config files.
+func loadEmbeddedDefaults() {
+	wrapperPatterns, _ = loadPatterns(defaultWrappers, "wrapper")
+	safeCommands, _ = loadPatterns(defaultCommands, "command")
+}
+
+// initConfig loads configuration from files, creating defaults if necessary.
+// It sets wrapperPatterns and safeCommands globals.
+// If loading fails, it falls back to embedded defaults.
+func initConfig() error {
+	if configInitialized {
+		return nil
+	}
+
+	configDir, err := getConfigDir()
+	if err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return err
+	}
+
+	if err := ensureConfigFiles(configDir); err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return err
+	}
+
+	// Load wrappers
+	wrappersPath := filepath.Join(configDir, "wrappers.toml")
+	wrappersData, err := os.ReadFile(wrappersPath)
+	if err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return fmt.Errorf("failed to read wrappers.toml: %w", err)
+	}
+
+	wrapperPatterns, err = loadPatterns(wrappersData, "wrapper")
+	if err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return fmt.Errorf("failed to load wrapper patterns: %w", err)
+	}
+
+	// Load commands
+	commandsPath := filepath.Join(configDir, "commands.toml")
+	commandsData, err := os.ReadFile(commandsPath)
+	if err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return fmt.Errorf("failed to read commands.toml: %w", err)
+	}
+
+	safeCommands, err = loadPatterns(commandsData, "command")
+	if err != nil {
+		loadEmbeddedDefaults()
+		configInitialized = true
+		return fmt.Errorf("failed to load command patterns: %w", err)
+	}
+
+	configInitialized = true
+	return nil
+}
+
 func main() {
+	initConfig() // Errors are ignored; fallbacks are used if config fails
 	osExit(run(os.Stdin, os.Stdout))
 }
 

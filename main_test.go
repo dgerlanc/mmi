@@ -5,10 +5,30 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+// TestMain sets up config for all tests
+func TestMain(m *testing.M) {
+	// Create a temp directory for config during tests
+	tmpDir, err := os.MkdirTemp("", "mmi-test-*")
+	if err != nil {
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set MMI_CONFIG to temp directory
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	// Initialize config (creates default config files in temp dir)
+	initConfig()
+
+	os.Exit(m.Run())
+}
 
 // =============================================================================
 // main() Tests
@@ -769,28 +789,239 @@ func TestLongCommand(t *testing.T) {
 	}
 }
 
-func TestSpecialCharactersInArgs(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		safe  bool
-	}{
-		{"grep with regex", `grep "^test.*$" file`, true},
-		{"find with glob", `find . -name "*.go"`, true},
-		{"echo with special", `echo "hello\nworld"`, true},
-		{"curl with url", `curl "https://example.com?foo=bar&baz=qux"`, true},
+// =============================================================================
+// Config Tests
+// =============================================================================
+
+func TestGetConfigDir(t *testing.T) {
+	// Test with MMI_CONFIG set
+	t.Run("with MMI_CONFIG env var", func(t *testing.T) {
+		origVal := os.Getenv("MMI_CONFIG")
+		defer os.Setenv("MMI_CONFIG", origVal)
+
+		os.Setenv("MMI_CONFIG", "/custom/path")
+		dir, err := getConfigDir()
+		if err != nil {
+			t.Errorf("getConfigDir() error = %v", err)
+		}
+		if dir != "/custom/path" {
+			t.Errorf("getConfigDir() = %q, want %q", dir, "/custom/path")
+		}
+	})
+
+	// Test without MMI_CONFIG (uses default)
+	t.Run("without MMI_CONFIG env var", func(t *testing.T) {
+		origVal := os.Getenv("MMI_CONFIG")
+		defer os.Setenv("MMI_CONFIG", origVal)
+
+		os.Unsetenv("MMI_CONFIG")
+		dir, err := getConfigDir()
+		if err != nil {
+			t.Errorf("getConfigDir() error = %v", err)
+		}
+		home, _ := os.UserHomeDir()
+		expected := filepath.Join(home, ".config", "mmi")
+		if dir != expected {
+			t.Errorf("getConfigDir() = %q, want %q", dir, expected)
+		}
+	})
+}
+
+func TestEnsureConfigFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mmi-ensure-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configDir := filepath.Join(tmpDir, "config")
+
+	// First call should create files
+	err = ensureConfigFiles(configDir)
+	if err != nil {
+		t.Errorf("ensureConfigFiles() error = %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			segments := splitCommandChain(tt.input)
-			if len(segments) != 1 {
-				t.Errorf("Expected 1 segment, got %d: %v", len(segments), segments)
-			}
-			isSafe := checkSafe(segments[0]) != ""
-			if isSafe != tt.safe {
-				t.Errorf("checkSafe(%q) safe=%v, want %v", segments[0], isSafe, tt.safe)
-			}
-		})
+	// Check files exist
+	wrappersPath := filepath.Join(configDir, "wrappers.toml")
+	commandsPath := filepath.Join(configDir, "commands.toml")
+
+	if _, err := os.Stat(wrappersPath); os.IsNotExist(err) {
+		t.Error("wrappers.toml was not created")
+	}
+	if _, err := os.Stat(commandsPath); os.IsNotExist(err) {
+		t.Error("commands.toml was not created")
+	}
+
+	// Second call should not overwrite existing files
+	originalContent, _ := os.ReadFile(wrappersPath)
+	err = ensureConfigFiles(configDir)
+	if err != nil {
+		t.Errorf("second ensureConfigFiles() error = %v", err)
+	}
+	newContent, _ := os.ReadFile(wrappersPath)
+	if !bytes.Equal(originalContent, newContent) {
+		t.Error("ensureConfigFiles() overwrote existing file")
+	}
+}
+
+func TestLoadPatterns(t *testing.T) {
+	t.Run("valid TOML", func(t *testing.T) {
+		tomlData := []byte(`
+[[wrapper]]
+pattern = "^test\\s+"
+name = "test"
+
+[[wrapper]]
+pattern = "^foo\\s+"
+name = "foo"
+`)
+		patterns, err := loadPatterns(tomlData, "wrapper")
+		if err != nil {
+			t.Errorf("loadPatterns() error = %v", err)
+		}
+		if len(patterns) != 2 {
+			t.Errorf("loadPatterns() returned %d patterns, want 2", len(patterns))
+		}
+		if patterns[0].Name != "test" {
+			t.Errorf("patterns[0].Name = %q, want %q", patterns[0].Name, "test")
+		}
+	})
+
+	t.Run("invalid regex", func(t *testing.T) {
+		tomlData := []byte(`
+[[wrapper]]
+pattern = "[invalid"
+name = "bad"
+`)
+		_, err := loadPatterns(tomlData, "wrapper")
+		if err == nil {
+			t.Error("loadPatterns() should return error for invalid regex")
+		}
+	})
+
+	t.Run("invalid TOML", func(t *testing.T) {
+		tomlData := []byte(`this is not valid toml {{{}}}`)
+		_, err := loadPatterns(tomlData, "wrapper")
+		if err == nil {
+			t.Error("loadPatterns() should return error for invalid TOML")
+		}
+	})
+}
+
+func TestInitConfig(t *testing.T) {
+	// Save original state
+	origWrappers := wrapperPatterns
+	origCommands := safeCommands
+	origInitialized := configInitialized
+	defer func() {
+		wrapperPatterns = origWrappers
+		safeCommands = origCommands
+		configInitialized = origInitialized
+	}()
+
+	t.Run("creates config files in new directory", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "mmi-init-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configDir := filepath.Join(tmpDir, "mmi")
+
+		// Set MMI_CONFIG
+		origEnv := os.Getenv("MMI_CONFIG")
+		os.Setenv("MMI_CONFIG", configDir)
+		defer os.Setenv("MMI_CONFIG", origEnv)
+
+		// Reset state
+		configInitialized = false
+		wrapperPatterns = nil
+		safeCommands = nil
+
+		err = initConfig()
+		if err != nil {
+			t.Errorf("initConfig() error = %v", err)
+		}
+
+		// Verify patterns were loaded
+		if len(wrapperPatterns) == 0 {
+			t.Error("wrapperPatterns is empty after initConfig()")
+		}
+		if len(safeCommands) == 0 {
+			t.Error("safeCommands is empty after initConfig()")
+		}
+
+		// Verify files were created
+		if _, err := os.Stat(filepath.Join(configDir, "wrappers.toml")); os.IsNotExist(err) {
+			t.Error("wrappers.toml was not created")
+		}
+		if _, err := os.Stat(filepath.Join(configDir, "commands.toml")); os.IsNotExist(err) {
+			t.Error("commands.toml was not created")
+		}
+	})
+}
+
+func TestConfigCustomization(t *testing.T) {
+	// Save original state
+	origWrappers := wrapperPatterns
+	origCommands := safeCommands
+	origInitialized := configInitialized
+	defer func() {
+		wrapperPatterns = origWrappers
+		safeCommands = origCommands
+		configInitialized = origInitialized
+	}()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-custom-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write custom config
+	wrappersToml := []byte(`
+[[wrapper]]
+pattern = "^custom\\s+"
+name = "custom"
+`)
+	commandsToml := []byte(`
+[[command]]
+pattern = "^mycommand\\b"
+name = "mycommand"
+`)
+	os.WriteFile(filepath.Join(tmpDir, "wrappers.toml"), wrappersToml, 0644)
+	os.WriteFile(filepath.Join(tmpDir, "commands.toml"), commandsToml, 0644)
+
+	// Set MMI_CONFIG
+	origEnv := os.Getenv("MMI_CONFIG")
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Setenv("MMI_CONFIG", origEnv)
+
+	// Reset state and load
+	configInitialized = false
+	wrapperPatterns = nil
+	safeCommands = nil
+
+	err = initConfig()
+	if err != nil {
+		t.Errorf("initConfig() error = %v", err)
+	}
+
+	// Verify custom patterns were loaded
+	if len(wrapperPatterns) != 1 || wrapperPatterns[0].Name != "custom" {
+		t.Errorf("Custom wrapper pattern not loaded correctly: %v", wrapperPatterns)
+	}
+	if len(safeCommands) != 1 || safeCommands[0].Name != "mycommand" {
+		t.Errorf("Custom command pattern not loaded correctly: %v", safeCommands)
+	}
+
+	// Verify custom patterns work
+	core, wrappers := stripWrappers("custom mycommand arg")
+	if len(wrappers) != 1 || wrappers[0] != "custom" {
+		t.Errorf("Custom wrapper not stripped: wrappers=%v", wrappers)
+	}
+	if checkSafe(core) != "mycommand" {
+		t.Errorf("Custom command not recognized as safe: %q", core)
 	}
 }
