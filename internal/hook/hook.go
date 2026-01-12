@@ -39,8 +39,17 @@ type SpecificOutput struct {
 	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
-// dangerousPattern matches command substitution syntax
-var dangerousPattern = regexp.MustCompile(`\$\(|` + "`")
+// subshellPattern matches $(...) command substitution syntax
+var subshellPattern = regexp.MustCompile(`\$\(`)
+
+// subshellExtractPattern extracts the command inside $(...) - captures the first word
+var subshellExtractPattern = regexp.MustCompile(`\$\(([a-zA-Z0-9_-]+)`)
+
+// backtickPattern matches `...` command substitution syntax
+var backtickPattern = regexp.MustCompile("`")
+
+// backtickExtractPattern extracts the command inside backticks - captures the first word
+var backtickExtractPattern = regexp.MustCompile("`([a-zA-Z0-9_-]+)")
 
 // currentProfile holds the current profile name for audit logging
 var currentProfile string
@@ -74,14 +83,23 @@ func ProcessWithResult(r io.Reader) Result {
 	cmd := input.ToolInput["command"]
 	logger.Debug("processing command", "command", cmd)
 
-	// Reject dangerous constructs (command substitution)
-	if dangerousPattern.MatchString(cmd) {
-		logger.Debug("rejected dangerous pattern", "command", cmd)
-		logAudit(cmd, false, "")
-		return Result{Command: cmd, Approved: false}
-	}
-
 	cfg := config.Get()
+
+	// Check for dangerous constructs (command substitution) based on config
+	if subshellPattern.MatchString(cmd) {
+		if !checkSubshellsAllowed(cmd, cfg.General.AllowSubshells, cfg.General.AllowedSubshellCommands, subshellExtractPattern) {
+			logger.Debug("rejected subshell pattern", "command", cmd)
+			logAudit(cmd, false, "")
+			return Result{Command: cmd, Approved: false}
+		}
+	}
+	if backtickPattern.MatchString(cmd) {
+		if !checkSubshellsAllowed(cmd, cfg.General.AllowBackticks, cfg.General.AllowedSubshellCommands, backtickExtractPattern) {
+			logger.Debug("rejected backtick pattern", "command", cmd)
+			logAudit(cmd, false, "")
+			return Result{Command: cmd, Approved: false}
+		}
+	}
 
 	// Check deny list FIRST (before any approval checks)
 	if denyReason := CheckDeny(cmd, cfg.DenyPatterns); denyReason != "" {
@@ -157,6 +175,49 @@ func logAudit(command string, approved bool, reason string) {
 		Reason:   reason,
 		Profile:  currentProfile,
 	})
+}
+
+// checkSubshellsAllowed checks if command substitution is allowed.
+// Returns true if:
+// - allowAll is true (all subshells allowed), or
+// - allowedCommands is non-empty and ALL extracted commands are in the list
+// The extractPattern should capture the command name in group 1.
+func checkSubshellsAllowed(cmd string, allowAll bool, allowedCommands []string, extractPattern *regexp.Regexp) bool {
+	if allowAll {
+		return true
+	}
+
+	// If no specific commands are allowed, reject
+	if len(allowedCommands) == 0 {
+		return false
+	}
+
+	// Extract all subshell commands and check each one
+	matches := extractPattern.FindAllStringSubmatch(cmd, -1)
+	if len(matches) == 0 {
+		// Pattern matched but couldn't extract command - reject for safety
+		return false
+	}
+
+	// Build a set of allowed commands for fast lookup
+	allowed := make(map[string]bool, len(allowedCommands))
+	for _, c := range allowedCommands {
+		allowed[c] = true
+	}
+
+	// All extracted commands must be in the allowed list
+	for _, match := range matches {
+		if len(match) < 2 {
+			return false
+		}
+		extractedCmd := match[1]
+		if !allowed[extractedCmd] {
+			logger.Debug("subshell command not in allowed list", "command", extractedCmd, "allowed", allowedCommands)
+			return false
+		}
+	}
+
+	return true
 }
 
 // FormatApproval returns the JSON approval output with a trailing newline

@@ -16,6 +16,18 @@ import (
 //go:embed config.toml
 var defaultConfig []byte
 
+// General holds general configuration options that don't fit into patterns.
+type General struct {
+	// AllowSubshells allows $(...) command substitution syntax when true
+	AllowSubshells bool
+	// AllowBackticks allows `...` command substitution syntax when true
+	AllowBackticks bool
+	// AllowedSubshellCommands is a list of command names allowed inside $(...).
+	// If non-empty, only subshells starting with these commands are allowed.
+	// Example: ["cat", "pwd"] allows $(cat file) and $(pwd) but not $(whoami)
+	AllowedSubshellCommands []string
+}
+
 // Config holds the compiled patterns from configuration.
 type Config struct {
 	// WrapperPatterns are safe prefixes that can wrap commands
@@ -24,6 +36,8 @@ type Config struct {
 	SafeCommands []patterns.Pattern
 	// DenyPatterns are patterns that are always rejected (checked before approval)
 	DenyPatterns []patterns.Pattern
+	// General holds general configuration options
+	General General
 }
 
 var (
@@ -266,6 +280,18 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			cfg.WrapperPatterns = append(cfg.WrapperPatterns, includeCfg.WrapperPatterns...)
 			cfg.SafeCommands = append(cfg.SafeCommands, includeCfg.SafeCommands...)
 			cfg.DenyPatterns = append(cfg.DenyPatterns, includeCfg.DenyPatterns...)
+			// General settings: allow if any included config allows
+			if includeCfg.General.AllowSubshells {
+				cfg.General.AllowSubshells = true
+			}
+			if includeCfg.General.AllowBackticks {
+				cfg.General.AllowBackticks = true
+			}
+			// Merge allowed subshell commands
+			cfg.General.AllowedSubshellCommands = append(
+				cfg.General.AllowedSubshellCommands,
+				includeCfg.General.AllowedSubshellCommands...,
+			)
 		}
 	}
 
@@ -292,6 +318,23 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			return nil, fmt.Errorf("failed to parse deny: %w", err)
 		}
 		cfg.DenyPatterns = append(cfg.DenyPatterns, deny...)
+	}
+
+	// Parse general section
+	if generalSection, ok := raw["general"].(map[string]any); ok {
+		if allowSubshells, ok := generalSection["allow_subshells"].(bool); ok {
+			cfg.General.AllowSubshells = allowSubshells
+		}
+		if allowBackticks, ok := generalSection["allow_backticks"].(bool); ok {
+			cfg.General.AllowBackticks = allowBackticks
+		}
+		if allowedCmds, ok := generalSection["allowed_subshell_commands"].([]any); ok {
+			for _, cmd := range allowedCmds {
+				if cmdStr, ok := cmd.(string); ok {
+					cfg.General.AllowedSubshellCommands = append(cfg.General.AllowedSubshellCommands, cmdStr)
+				}
+			}
+		}
 	}
 
 	return cfg, nil
