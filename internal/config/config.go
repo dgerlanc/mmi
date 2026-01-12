@@ -342,10 +342,10 @@ func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
 	return result, nil
 }
 
-// loadEmbeddedDefaults loads patterns from the embedded default config file.
+// loadEmbeddedDefaults returns an empty config that denies all commands.
+// This ensures mmi rejects everything when no config file exists.
 func loadEmbeddedDefaults() *Config {
-	cfg, _ := LoadConfig(defaultConfig)
-	return cfg
+	return &Config{}
 }
 
 // Init loads configuration from files.

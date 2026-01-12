@@ -40,11 +40,7 @@ name = "write to disk"
 
 [[deny.regex]]
 pattern = 'mkfs\.'
-name = "format filesystem"
-
-[[deny.regex]]
-pattern = ':(){:|:&};:'
-name = "fork bomb"
+name = "create filesystem"
 
 # ============================================================
 # WRAPPERS - prefixes stripped before checking the core command
@@ -121,11 +117,6 @@ subcommands = ["develop", "build"]
 [[commands.regex]]
 pattern = '^(true|false|exit(\s+\d+)?)$'
 name = "shell builtin"
-
-# cd (change directory)
-[[commands.regex]]
-pattern = '^cd\s'
-name = "cd"
 
 # source/. for venv activation
 [[commands.regex]]
