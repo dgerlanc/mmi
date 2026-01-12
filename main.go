@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dgerlanc/mmi/patterns"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -50,11 +51,6 @@ type HookSpecificOutput struct {
 	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
-// Pattern holds a compiled regex and its description
-type Pattern struct {
-	Regex *regexp.Regexp
-	Name  string
-}
 
 // RegexEntry represents a raw regex pattern in the config
 type RegexEntry struct {
@@ -79,10 +75,10 @@ type Config struct {
 var defaultConfig []byte
 
 // Safe wrappers that can prefix any safe command (initialized by initConfig)
-var wrapperPatterns []Pattern
+var wrapperPatterns []patterns.Pattern
 
 // Safe core command patterns (initialized by initConfig)
-var safeCommands []Pattern
+var safeCommands []patterns.Pattern
 
 // configInitialized tracks whether config has been loaded
 var configInitialized bool
@@ -125,65 +121,6 @@ func ensureConfigFiles(configDir string) error {
 	return nil
 }
 
-// buildFlagPattern converts a flag specification to a regex pattern.
-// "-f" becomes "(-f\s+)?"
-// "-f <arg>" becomes "(-f\s*\S+\s+)?" (allows -f10 or -f 10)
-// "<arg>" becomes "(\S+\s+)?" (positional argument)
-// "" (empty) becomes "" (allows bare command)
-func buildFlagPattern(flag string) string {
-	flag = strings.TrimSpace(flag)
-	if flag == "" {
-		return ""
-	}
-	if flag == "<arg>" {
-		return `(\S+\s+)?`
-	}
-	if strings.HasSuffix(flag, " <arg>") {
-		flagName := strings.TrimSuffix(flag, " <arg>")
-		// Allow optional space between flag and argument (e.g., -n10 or -n 10)
-		return `(` + regexp.QuoteMeta(flagName) + `\s*\S+\s+)?`
-	}
-	return `(` + regexp.QuoteMeta(flag) + `\s+)?`
-}
-
-// buildSimplePattern creates a regex for a simple command (any args allowed).
-// "pytest" becomes "^pytest\b"
-func buildSimplePattern(cmd string) string {
-	return `^` + regexp.QuoteMeta(cmd) + `\b`
-}
-
-// buildSubcommandPattern creates a regex for a command with subcommands and optional flags.
-// cmd="git", subcommands=["diff","log"], flags=["-C <arg>"] becomes
-// "^git\s+(-C\s+\S+\s+)?(diff|log)\b"
-func buildSubcommandPattern(cmd string, subcommands []string, flags []string) string {
-	var flagPatterns string
-	for _, f := range flags {
-		flagPatterns += buildFlagPattern(f)
-	}
-
-	// Escape subcommands and join with |
-	escaped := make([]string, len(subcommands))
-	for i, sub := range subcommands {
-		escaped[i] = regexp.QuoteMeta(sub)
-	}
-	subPattern := strings.Join(escaped, "|")
-
-	return `^` + regexp.QuoteMeta(cmd) + `\s+` + flagPatterns + `(` + subPattern + `)\b`
-}
-
-// buildWrapperPattern creates a regex for a wrapper command.
-// For wrappers with flags, the pattern matches the command followed by flags.
-// "timeout" with flags=["<arg>"] becomes "^timeout\s+(\S+\s+)?"
-func buildWrapperPattern(cmd string, flags []string) string {
-	var flagPatterns string
-	for _, f := range flags {
-		flagPatterns += buildFlagPattern(f)
-	}
-	if len(flags) > 0 {
-		return `^` + regexp.QuoteMeta(cmd) + `\s+` + flagPatterns
-	}
-	return `^` + regexp.QuoteMeta(cmd) + `\s+`
-}
 
 // parseSection parses a config section and returns compiled patterns.
 // isWrapper indicates if this is a wrapper section (affects pattern generation).
@@ -193,8 +130,8 @@ func buildWrapperPattern(cmd string, flags []string) string {
 //   - command: [[*.command]] command = "cmd", flags = [...] - wrapper with flags
 //   - subcommand: [[*.subcommand]] command = "cmd", subcommands = [...], flags = [...]
 //   - regex: [[*.regex]] pattern = "^regex$", name = "desc" - raw regex
-func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern, error) {
-	var patterns []Pattern
+func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]patterns.Pattern, error) {
+	var result []patterns.Pattern
 
 	for sectionType, value := range sectionData {
 		switch sectionType {
@@ -208,17 +145,17 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 					var pattern string
 					var patternName string
 					if isWrapper {
-						pattern = buildWrapperPattern(cmd, nil)
+						pattern = patterns.BuildWrapperPattern(cmd, nil)
 						patternName = cmd // For wrappers, use command name
 					} else {
-						pattern = buildSimplePattern(cmd)
+						pattern = patterns.BuildSimplePattern(cmd)
 						patternName = name // For commands, use the label
 					}
 					re, err := regexp.Compile(pattern)
 					if err != nil {
 						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 					}
-					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
+					result = append(result, patterns.Pattern{Regex: re, Name: patternName})
 				}
 			}
 
@@ -231,12 +168,12 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 					continue
 				}
 				flags := toStringSlice(entry["flags"])
-				pattern := buildWrapperPattern(cmd, flags)
+				pattern := patterns.BuildWrapperPattern(cmd, flags)
 				re, err := regexp.Compile(pattern)
 				if err != nil {
 					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 				}
-				patterns = append(patterns, Pattern{Regex: re, Name: cmd})
+				result = append(result, patterns.Pattern{Regex: re, Name: cmd})
 			}
 
 		case "subcommand":
@@ -252,12 +189,12 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 				if len(subs) == 0 {
 					continue
 				}
-				pattern := buildSubcommandPattern(cmd, subs, flags)
+				pattern := patterns.BuildSubcommandPattern(cmd, subs, flags)
 				re, err := regexp.Compile(pattern)
 				if err != nil {
 					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 				}
-				patterns = append(patterns, Pattern{Regex: re, Name: cmd})
+				result = append(result, patterns.Pattern{Regex: re, Name: cmd})
 			}
 
 		case "regex":
@@ -273,12 +210,12 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 				if err != nil {
 					return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
 				}
-				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
+				result = append(result, patterns.Pattern{Regex: re, Name: patternName})
 			}
 		}
 	}
 
-	return patterns, nil
+	return result, nil
 }
 
 // toStringSlice converts an interface{} to []string
@@ -324,7 +261,7 @@ func toMapSlice(v interface{}) []map[string]interface{} {
 }
 
 // loadConfig loads the config from TOML data and returns wrapper and command patterns.
-func loadConfig(data []byte) (wrappers []Pattern, commands []Pattern, err error) {
+func loadConfig(data []byte) (wrappers []patterns.Pattern, commands []patterns.Pattern, err error) {
 	var raw map[string]map[string]interface{}
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse TOML: %w", err)
