@@ -1,3 +1,5 @@
+![MMI Logo](logo.png)
+
 # MMI (Mother May I?)
 
 A CLI utility that acts as a PreToolUse Hook for Claude Code, providing intelligent auto-approval of safe Bash commands.
