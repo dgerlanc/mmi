@@ -299,6 +299,44 @@ cp examples/python.toml ~/.config/mmi/
 }
 ```
 
+## FAQ
+
+### What happens if I don't run `mmi init` first?
+
+If no configuration file exists at `~/.config/mmi/config.toml` (or the path specified by `MMI_CONFIG`), `mmi` will reject all commands. This fail-secure behavior ensures that commands are never auto-approved without explicit configuration. Run `mmi init` to create a default configuration file.
+
+### Why are command substitutions (`$(...)` and backticks) always rejected?
+
+Command substitution can execute arbitrary commands inside what appears to be a safe command. For example, `echo $(rm -rf /)` looks like an echo command but actually deletes files. `mmi` rejects both `$(...)` and backtick syntaxes unconditionally for security.
+
+### How do I test if a command will be approved?
+
+Use `mmi validate` to see your compiled patterns, or use the `--dry-run` flag to test specific commands without producing JSON output. Add `--verbose` for detailed debug logs showing why a command was approved or rejected.
+
+### Can I have different configurations for different projects?
+
+Yes, use profiles. Store configurations in `~/.config/mmi/profiles/<name>.toml` and activate with `--profile <name>` flag or `MMI_PROFILE` environment variable.
+
+### How do wrappers work?
+
+Wrappers are safe prefixes that are stripped before checking the core command. For example, if `timeout` is a wrapper and `pytest` is approved, then `timeout 10 pytest` is approved. Wrappers don't make unsafe commands safe—they simply allow safe commands to be wrapped with approved prefixes.
+
+### Where are approval decisions logged?
+
+Audit logs are written to `~/.local/share/mmi/audit.log` in JSON-lines format. Each entry includes the timestamp, command, approval status, and the pattern name that matched (if approved). Disable logging with `--no-audit-log`.
+
+### Why is my command rejected even though I added it to my config?
+
+Common causes:
+- **Deny list priority**: Deny patterns are checked first and override all approvals
+- **Command substitution**: Commands containing `$(...)` or backticks are always rejected
+- **Command chains**: If using `&&`, `||`, `|`, or `;`, all segments must be approved
+- **Pattern mismatch**: Use `mmi validate` to verify your patterns and `--verbose` to see why rejection occurred
+
+### What's the difference between config includes and profiles?
+
+**Includes** merge patterns from multiple TOML files into a single configuration (e.g., `include = ["python.toml", "rust.toml"]`). **Profiles** are complete alternative configurations stored in `~/.config/mmi/profiles/` and selected via `--profile` or `MMI_PROFILE`. Use includes to compose rules; use profiles to switch between different setups entirely.
+
 ## Testing
 
 Run the test suite:
