@@ -1,0 +1,101 @@
+# mmi configuration - safe commands and wrappers for Claude Code bash approval
+#
+# Structure:
+#   [wrappers.*] - prefixes stripped before checking the core command
+#   [commands.*] - safe commands that are allowed to execute
+#
+# Section types:
+#   [*.simple]     - commands = ["cmd1", "cmd2"] - any arguments allowed
+#   [*.cmdname]    - subcommands = ["sub1", "sub2"] - requires listed subcommand
+#                    flags = ["-f", "-o <arg>"] - flags allowed before subcommand
+#   [[*.regex]]    - pattern = "^regex$", name = "desc" - raw regex escape hatch
+
+# ============================================================
+# WRAPPERS - prefixes stripped before checking the core command
+# ============================================================
+
+[wrappers.simple]
+commands = ["env", "do"]
+
+[wrappers.timeout]
+flags = ["<arg>"]  # timeout 30 cmd
+
+[wrappers.nice]
+flags = ["-n <arg>", ""]  # nice -n 10 cmd, or just "nice cmd"
+
+[[wrappers.regex]]
+pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+name = "env vars"
+
+# Virtual env paths: .venv/bin/, ../.venv/bin/, venv/bin/
+[[wrappers.regex]]
+pattern = '^(\.\./)*\.?venv/bin/'
+name = ".venv"
+
+# Absolute path to venv: /abs/path/.venv/bin/
+[[wrappers.regex]]
+pattern = '^/[^\s]+/\.?venv/bin/'
+name = ".venv"
+
+# ============================================================
+# COMMANDS - safe commands that are allowed to execute
+# ============================================================
+
+[commands.simple]
+commands = ["pytest", "python", "ruff", "npx", "make", "touch", "echo", "uvx", "sleep"]
+
+[commands.read-only]
+commands = ["ls", "cat", "head", "tail", "wc", "find", "grep", "rg", "file", "which", "pwd", "du", "df", "curl", "sort", "uniq", "cut", "tr", "awk", "sed", "xargs"]
+
+[commands.git]
+subcommands = ["diff", "log", "status", "show", "branch", "stash", "bisect", "fetch", "add", "checkout", "merge", "rebase", "worktree"]
+flags = ["-C <arg>"]
+
+[commands.npm]
+subcommands = ["install", "run", "test", "build", "ci"]
+
+[commands.cargo]
+subcommands = ["build", "test", "run", "check", "clippy", "fmt", "clean"]
+
+[commands.uv]
+subcommands = ["pip", "run", "sync", "venv", "add", "remove", "lock"]
+
+[commands.maturin]
+subcommands = ["develop", "build"]
+
+[commands.process-mgmt]
+commands = ["pkill", "kill"]
+
+# done is simple because it's just "done" with no arguments
+[commands.loops]
+commands = ["done"]
+
+# Shell builtins for control flow
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+# cd (change directory)
+[[commands.regex]]
+pattern = '^cd\s'
+name = "cd"
+
+# source/. for venv activation
+[[commands.regex]]
+pattern = '^(source|\.) [^\s]*venv/bin/activate'
+name = "venv activate"
+
+# Variable assignment (VAR=value)
+[[commands.regex]]
+pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
+name = "var assignment"
+
+# for loop
+[[commands.regex]]
+pattern = '^for\s+\w+\s+in\s'
+name = "for loop"
+
+# while loop
+[[commands.regex]]
+pattern = '^while\s'
+name = "while loop"

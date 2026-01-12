@@ -54,27 +54,27 @@ type Pattern struct {
 	Name  string
 }
 
-// PatternEntry represents a pattern in the TOML config file
-type PatternEntry struct {
+// RegexEntry represents a raw regex pattern in the config
+type RegexEntry struct {
 	Pattern string `toml:"pattern"`
 	Name    string `toml:"name"`
 }
 
-// WrapperConfig represents the wrappers.toml file structure
-type WrapperConfig struct {
-	Wrapper []PatternEntry `toml:"wrapper"`
+// CommandSection represents a section in the config (simple, subcommands, or with flags)
+type CommandSection struct {
+	Commands    []string `toml:"commands"`
+	Subcommands []string `toml:"subcommands"`
+	Flags       []string `toml:"flags"`
 }
 
-// CommandConfig represents the commands.toml file structure
-type CommandConfig struct {
-	Command []PatternEntry `toml:"command"`
+// Config represents the full config.toml structure
+type Config struct {
+	Wrappers map[string]interface{} `toml:"wrappers"`
+	Commands map[string]interface{} `toml:"commands"`
 }
 
-//go:embed config/wrappers.toml
-var defaultWrappers []byte
-
-//go:embed config/commands.toml
-var defaultCommands []byte
+//go:embed config/config.toml
+var defaultConfig []byte
 
 // Safe wrappers that can prefix any safe command (initialized by initConfig)
 var wrapperPatterns []Pattern
@@ -119,55 +119,240 @@ func getConfigDir() (string, error) {
 	return filepath.Join(home, ".config", "mmi"), nil
 }
 
-// ensureConfigFiles creates the config directory and writes default config files if they don't exist.
+// ensureConfigFiles creates the config directory and writes default config file if it doesn't exist.
 func ensureConfigFiles(configDir string) error {
 	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Write default wrappers.toml if it doesn't exist
-	wrappersPath := filepath.Join(configDir, "wrappers.toml")
-	if _, err := os.Stat(wrappersPath); os.IsNotExist(err) {
-		if err := os.WriteFile(wrappersPath, defaultWrappers, 0644); err != nil {
-			return fmt.Errorf("failed to write wrappers.toml: %w", err)
-		}
-	}
-
-	// Write default commands.toml if it doesn't exist
-	commandsPath := filepath.Join(configDir, "commands.toml")
-	if _, err := os.Stat(commandsPath); os.IsNotExist(err) {
-		if err := os.WriteFile(commandsPath, defaultCommands, 0644); err != nil {
-			return fmt.Errorf("failed to write commands.toml: %w", err)
+	// Write default config.toml if it doesn't exist
+	configPath := filepath.Join(configDir, "config.toml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configPath, defaultConfig, 0644); err != nil {
+			return fmt.Errorf("failed to write config.toml: %w", err)
 		}
 	}
 
 	return nil
 }
 
-// loadPatterns loads patterns from a TOML file and compiles them to regex.
-func loadPatterns(data []byte, key string) ([]Pattern, error) {
-	var config map[string][]PatternEntry
-	if err := toml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse TOML: %w", err)
+// buildFlagPattern converts a flag specification to a regex pattern.
+// "-f" becomes "(-f\s+)?"
+// "-f <arg>" becomes "(-f\s*\S+\s+)?" (allows -f10 or -f 10)
+// "<arg>" becomes "(\S+\s+)?" (positional argument)
+// "" (empty) becomes "" (allows bare command)
+func buildFlagPattern(flag string) string {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return ""
+	}
+	if flag == "<arg>" {
+		return `(\S+\s+)?`
+	}
+	if strings.HasSuffix(flag, " <arg>") {
+		flagName := strings.TrimSuffix(flag, " <arg>")
+		// Allow optional space between flag and argument (e.g., -n10 or -n 10)
+		return `(` + regexp.QuoteMeta(flagName) + `\s*\S+\s+)?`
+	}
+	return `(` + regexp.QuoteMeta(flag) + `\s+)?`
+}
+
+// buildSimplePattern creates a regex for a simple command (any args allowed).
+// "pytest" becomes "^pytest\b"
+func buildSimplePattern(cmd string) string {
+	return `^` + regexp.QuoteMeta(cmd) + `\b`
+}
+
+// buildSubcommandPattern creates a regex for a command with subcommands and optional flags.
+// cmd="git", subcommands=["diff","log"], flags=["-C <arg>"] becomes
+// "^git\s+(-C\s+\S+\s+)?(diff|log)\b"
+func buildSubcommandPattern(cmd string, subcommands []string, flags []string) string {
+	var flagPatterns string
+	for _, f := range flags {
+		flagPatterns += buildFlagPattern(f)
 	}
 
-	entries := config[key]
-	patterns := make([]Pattern, 0, len(entries))
-	for _, entry := range entries {
-		re, err := regexp.Compile(entry.Pattern)
-		if err != nil {
-			return nil, fmt.Errorf("invalid regex pattern %q: %w", entry.Pattern, err)
-		}
-		patterns = append(patterns, Pattern{Regex: re, Name: entry.Name})
+	// Escape subcommands and join with |
+	escaped := make([]string, len(subcommands))
+	for i, sub := range subcommands {
+		escaped[i] = regexp.QuoteMeta(sub)
 	}
+	subPattern := strings.Join(escaped, "|")
+
+	return `^` + regexp.QuoteMeta(cmd) + `\s+` + flagPatterns + `(` + subPattern + `)\b`
+}
+
+// buildWrapperPattern creates a regex for a wrapper command.
+// For wrappers with flags, the pattern matches the command followed by flags.
+// "timeout" with flags=["<arg>"] becomes "^timeout\s+(\S+\s+)?"
+func buildWrapperPattern(cmd string, flags []string) string {
+	var flagPatterns string
+	for _, f := range flags {
+		flagPatterns += buildFlagPattern(f)
+	}
+	if len(flags) > 0 {
+		return `^` + regexp.QuoteMeta(cmd) + `\s+` + flagPatterns
+	}
+	return `^` + regexp.QuoteMeta(cmd) + `\s+`
+}
+
+// parseSection parses a config section and returns compiled patterns.
+// isWrapper indicates if this is a wrapper section (affects pattern generation).
+func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern, error) {
+	var patterns []Pattern
+
+	for name, value := range sectionData {
+		// Handle regex entries (array of {pattern, name})
+		if name == "regex" {
+			// Try []map[string]interface{} first (TOML library parses arrays of tables this way)
+			if entries, ok := value.([]map[string]interface{}); ok {
+				for _, entryMap := range entries {
+					pattern, _ := entryMap["pattern"].(string)
+					patternName, _ := entryMap["name"].(string)
+					if pattern == "" {
+						continue
+					}
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
+					}
+					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
+				}
+				continue
+			}
+			// Also try []interface{} as fallback
+			if entries, ok := value.([]interface{}); ok {
+				for _, entry := range entries {
+					entryMap, ok := entry.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					pattern, _ := entryMap["pattern"].(string)
+					patternName, _ := entryMap["name"].(string)
+					if pattern == "" {
+						continue
+					}
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
+					}
+					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
+				}
+			}
+			continue
+		}
+
+		// Handle command sections (map with commands/subcommands/flags)
+		sectionMap, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check for "commands" key (simple commands)
+		if cmdsRaw, ok := sectionMap["commands"]; ok {
+			cmds := toStringSlice(cmdsRaw)
+			for _, cmd := range cmds {
+				var pattern string
+				var patternName string
+				if isWrapper {
+					pattern = buildWrapperPattern(cmd, nil)
+					patternName = cmd // Use command name for wrappers (e.g., "env", "do")
+				} else {
+					pattern = buildSimplePattern(cmd)
+					patternName = name // Use section name for commands (e.g., "simple", "read-only")
+				}
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
+				}
+				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
+			}
+		}
+
+		// Check for "subcommands" key (command with subcommands)
+		if subsRaw, ok := sectionMap["subcommands"]; ok {
+			subs := toStringSlice(subsRaw)
+			flags := toStringSlice(sectionMap["flags"])
+			if len(subs) > 0 {
+				var pattern string
+				if isWrapper {
+					pattern = buildWrapperPattern(name, flags)
+				} else {
+					pattern = buildSubcommandPattern(name, subs, flags)
+				}
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid pattern for %q: %w", name, err)
+				}
+				patterns = append(patterns, Pattern{Regex: re, Name: name})
+			}
+		}
+
+		// Check for "flags" key only (wrapper with flags, no subcommands)
+		if _, hasSubcmds := sectionMap["subcommands"]; !hasSubcmds {
+			if flagsRaw, ok := sectionMap["flags"]; ok {
+				flags := toStringSlice(flagsRaw)
+				if len(flags) > 0 {
+					pattern := buildWrapperPattern(name, flags)
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid pattern for %q: %w", name, err)
+					}
+					patterns = append(patterns, Pattern{Regex: re, Name: name})
+				}
+			}
+		}
+	}
+
 	return patterns, nil
 }
 
-// loadEmbeddedDefaults loads patterns from the embedded default config files.
+// toStringSlice converts an interface{} to []string
+func toStringSlice(v interface{}) []string {
+	if v == nil {
+		return nil
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// loadConfig loads the config from TOML data and returns wrapper and command patterns.
+func loadConfig(data []byte) (wrappers []Pattern, commands []Pattern, err error) {
+	var raw map[string]map[string]interface{}
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse TOML: %w", err)
+	}
+
+	if wrappersSection, ok := raw["wrappers"]; ok {
+		wrappers, err = parseSection(wrappersSection, true)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse wrappers: %w", err)
+		}
+	}
+
+	if commandsSection, ok := raw["commands"]; ok {
+		commands, err = parseSection(commandsSection, false)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse commands: %w", err)
+		}
+	}
+
+	return wrappers, commands, nil
+}
+
+// loadEmbeddedDefaults loads patterns from the embedded default config file.
 func loadEmbeddedDefaults() {
-	wrapperPatterns, _ = loadPatterns(defaultWrappers, "wrapper")
-	safeCommands, _ = loadPatterns(defaultCommands, "command")
+	wrapperPatterns, safeCommands, _ = loadConfig(defaultConfig)
 }
 
 // initConfig loads configuration from files, creating defaults if necessary.
@@ -191,36 +376,20 @@ func initConfig() error {
 		return err
 	}
 
-	// Load wrappers
-	wrappersPath := filepath.Join(configDir, "wrappers.toml")
-	wrappersData, err := os.ReadFile(wrappersPath)
+	// Load config
+	configPath := filepath.Join(configDir, "config.toml")
+	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		loadEmbeddedDefaults()
 		configInitialized = true
-		return fmt.Errorf("failed to read wrappers.toml: %w", err)
+		return fmt.Errorf("failed to read config.toml: %w", err)
 	}
 
-	wrapperPatterns, err = loadPatterns(wrappersData, "wrapper")
+	wrapperPatterns, safeCommands, err = loadConfig(configData)
 	if err != nil {
 		loadEmbeddedDefaults()
 		configInitialized = true
-		return fmt.Errorf("failed to load wrapper patterns: %w", err)
-	}
-
-	// Load commands
-	commandsPath := filepath.Join(configDir, "commands.toml")
-	commandsData, err := os.ReadFile(commandsPath)
-	if err != nil {
-		loadEmbeddedDefaults()
-		configInitialized = true
-		return fmt.Errorf("failed to read commands.toml: %w", err)
-	}
-
-	safeCommands, err = loadPatterns(commandsData, "command")
-	if err != nil {
-		loadEmbeddedDefaults()
-		configInitialized = true
-		return fmt.Errorf("failed to load command patterns: %w", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	configInitialized = true
