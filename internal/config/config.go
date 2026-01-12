@@ -191,36 +191,88 @@ func toMapSlice(v any) []map[string]any {
 }
 
 // LoadConfig loads the config from TOML data and returns a Config.
+// configDir is optional and only needed when the config uses include directives.
 func LoadConfig(data []byte) (*Config, error) {
-	var raw map[string]map[string]any
+	return LoadConfigWithDir(data, "")
+}
+
+// LoadConfigWithDir loads the config from TOML data with a base directory for includes.
+func LoadConfigWithDir(data []byte, configDir string) (*Config, error) {
+	return loadConfigWithIncludes(data, configDir, make(map[string]bool))
+}
+
+// loadConfigWithIncludes loads config with include support and cycle detection.
+func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bool) (*Config, error) {
+	var raw map[string]any
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
 	}
 
 	cfg := &Config{}
 
-	if wrappersSection, ok := raw["wrappers"]; ok {
+	// Process includes first
+	if includeVal, ok := raw["include"]; ok {
+		includes := toStringSlice(includeVal)
+		for _, include := range includes {
+			if configDir == "" {
+				logger.Debug("include directive ignored (no config directory)", "include", include)
+				continue
+			}
+
+			includePath := filepath.Join(configDir, include)
+
+			// Check for cycles
+			absPath, err := filepath.Abs(includePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve include path %q: %w", include, err)
+			}
+			if visited[absPath] {
+				return nil, fmt.Errorf("circular include detected: %s", include)
+			}
+			visited[absPath] = true
+
+			// Load included file
+			includeData, err := os.ReadFile(includePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read include file %q: %w", include, err)
+			}
+
+			logger.Debug("loading include", "path", includePath)
+			includeCfg, err := loadConfigWithIncludes(includeData, configDir, visited)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse include file %q: %w", include, err)
+			}
+
+			// Merge included config
+			cfg.WrapperPatterns = append(cfg.WrapperPatterns, includeCfg.WrapperPatterns...)
+			cfg.SafeCommands = append(cfg.SafeCommands, includeCfg.SafeCommands...)
+			cfg.DenyPatterns = append(cfg.DenyPatterns, includeCfg.DenyPatterns...)
+		}
+	}
+
+	// Parse sections from this file
+	if wrappersSection, ok := raw["wrappers"].(map[string]any); ok {
 		wrappers, err := parseSection(wrappersSection, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse wrappers: %w", err)
 		}
-		cfg.WrapperPatterns = wrappers
+		cfg.WrapperPatterns = append(cfg.WrapperPatterns, wrappers...)
 	}
 
-	if commandsSection, ok := raw["commands"]; ok {
+	if commandsSection, ok := raw["commands"].(map[string]any); ok {
 		commands, err := parseSection(commandsSection, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse commands: %w", err)
 		}
-		cfg.SafeCommands = commands
+		cfg.SafeCommands = append(cfg.SafeCommands, commands...)
 	}
 
-	if denySection, ok := raw["deny"]; ok {
+	if denySection, ok := raw["deny"].(map[string]any); ok {
 		deny, err := parseDenySection(denySection)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse deny: %w", err)
 		}
-		cfg.DenyPatterns = deny
+		cfg.DenyPatterns = append(cfg.DenyPatterns, deny...)
 	}
 
 	return cfg, nil
@@ -309,7 +361,7 @@ func Init() error {
 		return fmt.Errorf("failed to read config.toml: %w", err)
 	}
 
-	globalConfig, err = LoadConfig(configData)
+	globalConfig, err = LoadConfigWithDir(configData, configDir)
 	if err != nil {
 		logger.Debug("failed to parse config, using embedded defaults", "error", err)
 		globalConfig = loadEmbeddedDefaults()
