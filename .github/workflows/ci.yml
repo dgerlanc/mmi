@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check formatting
+        run: just fmt-check
+
+      - name: Run tests with coverage
+        run: just coverage-report
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Build
+        run: just build
+
+      - name: Verify binary runs
+        run: |
+          echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | ./mmi
