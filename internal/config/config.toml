@@ -23,23 +23,23 @@ commands = ["sudo", "su", "doas"]
 
 # Dangerous patterns with risky argument combinations
 [[deny.regex]]
-pattern = 'rm\s+(-[rRfF]+\s+)*/'
+pattern = "rm\s+(-[rRfF]+\s+)*/"
 name = "rm root"
 
 [[deny.regex]]
-pattern = 'chmod\s+(777|a\+rwx)'
+pattern = "chmod\s+(777|a\+rwx)"
 name = "chmod world-writable"
 
 [[deny.regex]]
-pattern = 'dd\s+.*of=/dev/'
+pattern = "dd\s+.*of=/dev/"
 name = "dd to device"
 
 [[deny.regex]]
-pattern = '>\s*/dev/sd[a-z]'
+pattern = ">\s*/dev/sd[a-z]"
 name = "write to disk"
 
 [[deny.regex]]
-pattern = 'mkfs\.'
+pattern = "mkfs\."
 name = "format filesystem"
 
 # ============================================================
@@ -59,7 +59,7 @@ command = "nice"
 flags = ["-n <arg>", ""]
 
 [[wrappers.regex]]
-pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+pattern = "^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+"
 name = "env vars"
 
 # ============================================================
@@ -69,9 +69,9 @@ name = "env vars"
 
 [[commands.simple]]
 name = "unix-and-shell"
-commands = ['awk', 'cat', 'cd', 'curl', 'cut', 'df', 'du', 'echo', 'file', 'find', 'grep',
-            'head', 'ls', 'make', 'pwd', 'rg', 'sed', 'sleep', 'sort', 'tail', 'touch',
-            'tr', 'uniq', 'wc', 'which', 'xargs']
+commands = ["awk", "cat", "cd", "curl", "cut", "df", "du", "echo", "file", "find", "grep",
+            "head", "ls", "make", "pwd", "rg", "sed", "sleep", "sort", "tail", "touch",
+            "tr", "uniq", "wc", "which", "xargs"]
 
 # [[commands.simple]]
 # name = "process-mgmt"
@@ -79,7 +79,7 @@ commands = ['awk', 'cat', 'cd', 'curl', 'cut', 'df', 'du', 'echo', 'file', 'find
 
 # [[commands.simple]]
 # name = "python"
-# commands = ['pytest', 'python', 'ruff', 'uvx']
+# commands = ["pytest", "python", "ruff", "uvx"]
 
 # [[commands.subcommand]]
 # command = "uv"
@@ -88,17 +88,17 @@ commands = ['awk', 'cat', 'cd', 'curl', 'cut', 'df', 'du', 'echo', 'file', 'find
 
 # Shell builtins for control flow
 [[commands.regex]]
-pattern = '^(true|false|exit(\s+\d+)?)$'
+pattern = "^(true|false|exit(\s+\d+)?)$"
 name = "shell builtin"
 
 [[commands.regex]]
-pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
+pattern = "^[A-Z_][A-Z0-9_]*=\S*$"
 name = "var assignment"
 
 [[commands.regex]]
-pattern = '^for\s+\w+\s+in\s'
+pattern = "^for\s+\w+\s+in\s"
 name = "for loop"
 
 [[commands.regex]]
-pattern = '^while\s'
+pattern = "^while\s"
 name = "while loop"
