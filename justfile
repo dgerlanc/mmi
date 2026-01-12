@@ -54,6 +54,14 @@ install prefix="/usr/local": build
 tidy:
     go mod tidy
 
+# Run benchmarks
+bench:
+    go test -bench=. -benchmem ./...
+
+# Run benchmarks with comparison output (useful for perf regression testing)
+bench-compare count="5":
+    go test -bench=. -benchmem -count={{count}} ./... | tee bench.txt
+
 # Run fuzz tests (default: 30s per target)
 fuzz time="30s":
     go test -fuzz=FuzzSplitCommandChain -fuzztime={{time}} .

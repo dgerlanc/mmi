@@ -3,3 +3,8 @@ mmi
 
 # Claude Code plans
 .claude/
+
+# Test artifacts
+coverage.out
+coverage.html
+bench.txt
