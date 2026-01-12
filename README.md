@@ -1,12 +1,12 @@
 ![MMI Logo](logo.png)
 
-# MMI (Mother May I?)
+# mmi (Mother May I?)
 
 A CLI utility that acts as a PreToolUse Hook for Claude Code, providing intelligent auto-approval of safe Bash commands.
 
 ## Overview
 
-MMI analyzes Bash commands and automatically approves those that are known to be safe, eliminating the need for manual approval on every command. This significantly speeds up development workflows while maintaining security through a configurable allowlist approach.
+MMI parses Bash commands and automatically approves those that are known to be safe, eliminating the need for manual approval on every command. This significantly speeds up development workflows while maintaining security through a configurable allowlist approach.
 
 The name "Mother May I?" references the childhood game where permission must be granted before taking action.
 
@@ -31,15 +31,16 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [Releases]
 
 ## Quick Start
 
-1. Install MMI (see above)
-2. Run `mmi init` to create a configuration file interactively
-3. Add MMI as a hook in your Claude Code settings
+1. Install `mmi` (see above)
+2. Run `mmi init` to create a default configuration file
+3. Add `mmi` as a hook in your Claude Code settings
+4. (Optional) Include an example config for your language stack (see [Example Configurations](#example-configurations))
 
 ## Configuration
 
 ### Claude Code Hook Setup
 
-Add MMI as a PreToolUse hook in your Claude Code settings (`~/.claude/settings.json`):
+Add `mmi` as a PreToolUse hook in your Claude Code settings (`~/.claude/settings.json`):
 
 ```json
 {
@@ -59,9 +60,9 @@ Add MMI as a PreToolUse hook in your Claude Code settings (`~/.claude/settings.j
 }
 ```
 
-### MMI Configuration File
+### `mmi` Configuration File
 
-MMI uses a TOML configuration file at `~/.config/mmi/config.toml`. You can generate one interactively:
+`mmi` uses a TOML configuration file at `~/.config/mmi/config.toml`. Generate the default config:
 
 ```bash
 mmi init
@@ -140,12 +141,14 @@ Run as a hook - reads JSON from stdin, outputs approval JSON to stdout.
 
 ### `mmi init`
 
-Interactively create a configuration file:
+Create a default configuration file:
 
 ```bash
 mmi init
 mmi init --force  # Overwrite existing config
 ```
+
+The default config includes basic Unix utilities and shell builtins. For language-specific commands (Python, Node.js, Rust), copy an example config from `examples/`.
 
 ### `mmi validate`
 
@@ -184,13 +187,13 @@ mmi completion powershell > mmi.ps1
 
 ## How It Works
 
-MMI uses a three-layer approval model:
+`mmi` uses a three-layer approval model:
 
 1. **Deny List** - Patterns that are always rejected (checked first)
 2. **Wrappers** - Safe command prefixes that can wrap any approved command
 3. **Safe Commands** - Allowlisted commands that are safe to execute
 
-When a command is submitted, MMI:
+When a command is submitted, `mmi`:
 
 1. Checks for dangerous patterns (command substitution `$()` or backticks)
 2. Checks if the command matches any deny patterns
@@ -204,6 +207,8 @@ When a command is submitted, MMI:
 
 ## Default Approved Commands
 
+The default configuration is intentionally restrictive. Use example configs for language-specific setups.
+
 ### Deny List (Always Rejected)
 
 - Privilege escalation: `sudo`, `su`, `doas`
@@ -215,26 +220,32 @@ When a command is submitted, MMI:
 - `nice` / `nice -n N` - process priority
 - `env` - environment setup
 - `VAR=value` - environment variable assignments
-- Virtual environment paths (`.venv/bin/`, `venv/bin/`)
 - `do` - loop body prefix
 
-### Safe Commands
+### Safe Commands (Default Config)
 
 | Category | Commands |
 |----------|----------|
-| **Git** | `diff`, `log`, `status`, `show`, `branch`, `stash`, `bisect`, `fetch`, `add`, `checkout`, `merge`, `rebase`, `worktree` |
-| **Python** | `pytest`, `python`, `ruff`, `uv`, `uvx` |
-| **Node.js** | `npm` (install, run, test, build, ci), `npx` |
-| **Rust** | `cargo` (build, test, run, check, clippy, fmt, clean), `maturin` |
-| **Read-Only** | `ls`, `cat`, `head`, `tail`, `wc`, `find`, `grep`, `rg`, `file`, `which`, `pwd`, `du`, `df`, `curl`, `sort`, `uniq`, `cut`, `tr`, `awk`, `sed`, `xargs` |
-| **File Ops** | `touch` |
-| **Shell** | `echo`, `cd`, `true`, `false`, `exit`, `source`/`.` (venv activation), `sleep` |
-| **Process** | `pkill`, `kill` |
-| **Loops** | `for`, `while`, `done` |
+| **Unix Utilities** | `ls`, `cat`, `head`, `tail`, `wc`, `find`, `grep`, `rg`, `file`, `which`, `pwd`, `du`, `df`, `curl`, `sort`, `uniq`, `cut`, `tr`, `awk`, `sed`, `xargs` |
+| **File Ops** | `touch`, `make` |
+| **Shell** | `echo`, `cd`, `true`, `false`, `exit`, `sleep` |
+| **Loops** | `for`, `while` |
+
+### Additional Commands (via Example Configs)
+
+Copy from `examples/` to enable language-specific commands:
+
+| Config | Enables |
+|--------|---------|
+| `python.toml` | `pytest`, `python`, `ruff`, `uv`, `uvx`, `mypy`, `black`, `isort`, `pip`, git subcommands |
+| `node.toml` | `npm`, `npx`, `node`, `yarn`, `pnpm`, `bun`, `eslint`, `prettier`, `tsc`, git subcommands |
+| `rust.toml` | `cargo`, `rustup`, `maturin`, `rustc`, `rustfmt`, git subcommands |
+| `minimal.toml` | Basic read-only commands plus git read-only (`status`, `log`, `diff`, `show`, `branch`) |
+| `strict.toml` | Read-only only, denies file modifications |
 
 ## Audit Logging
 
-MMI logs all approval decisions to `~/.local/share/mmi/audit.log` in JSON-lines format:
+`mmi` logs all approval decisions to `~/.local/share/mmi/audit.log` in JSON-lines format:
 
 ```json
 {"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git"}
@@ -245,7 +256,7 @@ Disable with `--no-audit-log`.
 
 ## Security Model
 
-MMI follows a **fail-secure default**:
+`mmi` follows a **fail-secure default**:
 
 - Deny patterns are checked first and override all approvals
 - Unrecognized commands are automatically rejected
@@ -258,14 +269,25 @@ MMI follows a **fail-secure default**:
 The `examples/` directory contains ready-to-use configurations:
 
 - `minimal.toml` - Bare-bones for security-conscious users
-- `python.toml` - Python development
-- `node.toml` - Node.js development
-- `rust.toml` - Rust development
+- `python.toml` - Python development (pytest, uv, ruff, mypy, etc.)
+- `node.toml` - Node.js development (npm, yarn, pnpm, bun, etc.)
+- `rust.toml` - Rust development (cargo, rustup, maturin, etc.)
 - `strict.toml` - Read-only commands only
+
+To use an example config:
+
+```bash
+# Replace default config with an example
+cp examples/python.toml ~/.config/mmi/config.toml
+
+# Or use includes to combine configs
+echo 'include = ["python.toml"]' >> ~/.config/mmi/config.toml
+cp examples/python.toml ~/.config/mmi/
+```
 
 ## Output Format
 
-MMI outputs JSON decisions:
+`mmi` outputs JSON decisions:
 
 ```json
 {
