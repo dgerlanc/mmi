@@ -53,3 +53,15 @@ install prefix="/usr/local": build
 # Tidy go.mod
 tidy:
     go mod tidy
+
+# Run fuzz tests (default: 30s per target)
+fuzz time="30s":
+    go test -fuzz=FuzzSplitCommandChain -fuzztime={{time}} .
+    go test -fuzz=FuzzProcess -fuzztime={{time}} .
+    go test -fuzz=FuzzStripWrappers -fuzztime={{time}} .
+    go test -fuzz=FuzzCheckSafe -fuzztime={{time}} .
+    go test -fuzz=FuzzCheckDeny -fuzztime={{time}} .
+
+# Run a specific fuzz test
+fuzz-one target time="30s":
+    go test -fuzz={{target}} -fuzztime={{time}} .
