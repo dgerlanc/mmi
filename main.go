@@ -199,68 +199,33 @@ func buildWrapperPattern(cmd string, flags []string) string {
 
 // parseSection parses a config section and returns compiled patterns.
 // isWrapper indicates if this is a wrapper section (affects pattern generation).
+//
+// Section types:
+//   - simple: [*.simple] commands = ["cmd1", "cmd2"] - any arguments allowed
+//   - command: [[*.command]] command = "cmd", flags = [...] - wrapper with flags
+//   - subcommand: [[*.subcommand]] command = "cmd", subcommands = [...], flags = [...]
+//   - regex: [[*.regex]] pattern = "^regex$", name = "desc" - raw regex
 func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern, error) {
 	var patterns []Pattern
 
-	for name, value := range sectionData {
-		// Handle regex entries (array of {pattern, name})
-		if name == "regex" {
-			// Try []map[string]interface{} first (TOML library parses arrays of tables this way)
-			if entries, ok := value.([]map[string]interface{}); ok {
-				for _, entryMap := range entries {
-					pattern, _ := entryMap["pattern"].(string)
-					patternName, _ := entryMap["name"].(string)
-					if pattern == "" {
-						continue
-					}
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
-					}
-					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
-				}
+	for sectionType, value := range sectionData {
+		switch sectionType {
+		case "simple":
+			// [*.simple] commands = ["cmd1", "cmd2"]
+			sectionMap, ok := value.(map[string]interface{})
+			if !ok {
 				continue
 			}
-			// Also try []interface{} as fallback
-			if entries, ok := value.([]interface{}); ok {
-				for _, entry := range entries {
-					entryMap, ok := entry.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					pattern, _ := entryMap["pattern"].(string)
-					patternName, _ := entryMap["name"].(string)
-					if pattern == "" {
-						continue
-					}
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
-					}
-					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
-				}
-			}
-			continue
-		}
-
-		// Handle command sections (map with commands/subcommands/flags)
-		sectionMap, ok := value.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		// Check for "commands" key (simple commands)
-		if cmdsRaw, ok := sectionMap["commands"]; ok {
-			cmds := toStringSlice(cmdsRaw)
+			cmds := toStringSlice(sectionMap["commands"])
 			for _, cmd := range cmds {
 				var pattern string
 				var patternName string
 				if isWrapper {
 					pattern = buildWrapperPattern(cmd, nil)
-					patternName = cmd // Use command name for wrappers (e.g., "env", "do")
+					patternName = cmd
 				} else {
 					pattern = buildSimplePattern(cmd)
-					patternName = name // Use section name for commands (e.g., "simple", "read-only")
+					patternName = "simple"
 				}
 				re, err := regexp.Compile(pattern)
 				if err != nil {
@@ -268,38 +233,76 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 				}
 				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
 			}
-		}
 
-		// Check for "subcommands" key (command with subcommands)
-		if subsRaw, ok := sectionMap["subcommands"]; ok {
-			subs := toStringSlice(subsRaw)
-			flags := toStringSlice(sectionMap["flags"])
-			if len(subs) > 0 {
-				var pattern string
-				if isWrapper {
-					pattern = buildWrapperPattern(name, flags)
-				} else {
-					pattern = buildSubcommandPattern(name, subs, flags)
+		case "command":
+			// [[*.command]] command = "cmd", flags = [...]
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				cmd, _ := entry["command"].(string)
+				if cmd == "" {
+					continue
+				}
+				flags := toStringSlice(entry["flags"])
+				pattern := buildWrapperPattern(cmd, flags)
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
+				}
+				patterns = append(patterns, Pattern{Regex: re, Name: cmd})
+			}
+
+		case "subcommand":
+			// [[*.subcommand]] command = "cmd", subcommands = [...], flags = [...]
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				cmd, _ := entry["command"].(string)
+				if cmd == "" {
+					continue
+				}
+				subs := toStringSlice(entry["subcommands"])
+				flags := toStringSlice(entry["flags"])
+				if len(subs) == 0 {
+					continue
+				}
+				pattern := buildSubcommandPattern(cmd, subs, flags)
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
+				}
+				patterns = append(patterns, Pattern{Regex: re, Name: cmd})
+			}
+
+		case "regex":
+			// [[*.regex]] pattern = "^regex$", name = "desc"
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				pattern, _ := entry["pattern"].(string)
+				patternName, _ := entry["name"].(string)
+				if pattern == "" {
+					continue
 				}
 				re, err := regexp.Compile(pattern)
 				if err != nil {
-					return nil, fmt.Errorf("invalid pattern for %q: %w", name, err)
+					return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
 				}
-				patterns = append(patterns, Pattern{Regex: re, Name: name})
+				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
 			}
-		}
 
-		// Check for "flags" key only (wrapper with flags, no subcommands)
-		if _, hasSubcmds := sectionMap["subcommands"]; !hasSubcmds {
-			if flagsRaw, ok := sectionMap["flags"]; ok {
-				flags := toStringSlice(flagsRaw)
-				if len(flags) > 0 {
-					pattern := buildWrapperPattern(name, flags)
+		default:
+			// Named sections like [commands.read-only] commands = [...]
+			sectionMap, ok := value.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if cmdsRaw, ok := sectionMap["commands"]; ok {
+				cmds := toStringSlice(cmdsRaw)
+				for _, cmd := range cmds {
+					pattern := buildSimplePattern(cmd)
 					re, err := regexp.Compile(pattern)
 					if err != nil {
-						return nil, fmt.Errorf("invalid pattern for %q: %w", name, err)
+						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 					}
-					patterns = append(patterns, Pattern{Regex: re, Name: name})
+					patterns = append(patterns, Pattern{Regex: re, Name: sectionType})
 				}
 			}
 		}
@@ -321,6 +324,30 @@ func toStringSlice(v interface{}) []string {
 	for _, item := range arr {
 		if s, ok := item.(string); ok {
 			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// toMapSlice converts an interface{} to []map[string]interface{}
+// Handles both []map[string]interface{} and []interface{} from TOML parsing
+func toMapSlice(v interface{}) []map[string]interface{} {
+	if v == nil {
+		return nil
+	}
+	// Try direct type assertion first (TOML library sometimes returns this)
+	if maps, ok := v.([]map[string]interface{}); ok {
+		return maps
+	}
+	// Try []interface{} (more common from TOML parsing)
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(arr))
+	for _, item := range arr {
+		if m, ok := item.(map[string]interface{}); ok {
+			result = append(result, m)
 		}
 	}
 	return result
