@@ -1,4 +1,4 @@
-![MMI Logo](logo.png)
+<img src="logo.png" alt="MMI Logo" height="250">
 
 # mmi (Mother May I?)
 
