@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/dgerlanc/mmi/patterns"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -297,12 +298,14 @@ func initConfig() error {
 
 	configDir, err := getConfigDir()
 	if err != nil {
+		logger.Debug("failed to get config dir, using embedded defaults", "error", err)
 		loadEmbeddedDefaults()
 		configInitialized = true
 		return err
 	}
 
 	if err := ensureConfigFiles(configDir); err != nil {
+		logger.Debug("failed to ensure config files, using embedded defaults", "error", err)
 		loadEmbeddedDefaults()
 		configInitialized = true
 		return err
@@ -312,6 +315,7 @@ func initConfig() error {
 	configPath := filepath.Join(configDir, "config.toml")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
+		logger.Debug("failed to read config file, using embedded defaults", "path", configPath, "error", err)
 		loadEmbeddedDefaults()
 		configInitialized = true
 		return fmt.Errorf("failed to read config.toml: %w", err)
@@ -319,16 +323,24 @@ func initConfig() error {
 
 	wrapperPatterns, safeCommands, err = loadConfig(configData)
 	if err != nil {
+		logger.Debug("failed to parse config, using embedded defaults", "error", err)
 		loadEmbeddedDefaults()
 		configInitialized = true
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	logger.Debug("config loaded successfully",
+		"path", configPath,
+		"wrappers", len(wrapperPatterns),
+		"commands", len(safeCommands))
 	configInitialized = true
 	return nil
 }
 
 func main() {
+	// Initialize logger (non-verbose by default, will be configurable via CLI later)
+	logger.Init(logger.Options{Verbose: false})
+
 	initConfig() // Errors are ignored; fallbacks are used if config fails
 	osExit(run(os.Stdin, os.Stdout))
 }
@@ -348,29 +360,44 @@ func run(stdin io.Reader, stdout io.Writer) int {
 func process(r io.Reader) (approved bool, reason string) {
 	var input HookInput
 	if err := json.NewDecoder(r).Decode(&input); err != nil {
+		logger.Debug("failed to decode input", "error", err)
 		return false, ""
 	}
 
 	if input.ToolName != "Bash" {
+		logger.Debug("not a Bash command", "tool", input.ToolName)
 		return false, ""
 	}
 
 	cmd := input.ToolInput["command"]
+	logger.Debug("processing command", "command", cmd)
 
 	// Reject dangerous constructs
 	if dangerousPattern.MatchString(cmd) {
+		logger.Debug("rejected dangerous pattern", "command", cmd)
 		return false, ""
 	}
 
 	segments := splitCommandChain(cmd)
+	logger.Debug("split command chain", "segments", len(segments))
+
 	var reasons []string
 
-	for _, segment := range segments {
+	for i, segment := range segments {
 		coreCmd, wrappers := stripWrappers(segment)
+		logger.Debug("processing segment",
+			"index", i,
+			"segment", segment,
+			"core", coreCmd,
+			"wrappers", wrappers)
+
 		r := checkSafe(coreCmd)
 		if r == "" {
+			logger.Debug("rejected unsafe command", "command", coreCmd)
 			return false, "" // One unsafe segment = reject entire command
 		}
+		logger.Debug("matched pattern", "command", coreCmd, "pattern", r)
+
 		if len(wrappers) > 0 {
 			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+r)
 		} else {
@@ -378,7 +405,9 @@ func process(r io.Reader) (approved bool, reason string) {
 		}
 	}
 
-	return true, strings.Join(reasons, " | ")
+	result := strings.Join(reasons, " | ")
+	logger.Debug("approved", "reason", result)
+	return true, result
 }
 
 // formatApproval returns the JSON approval output with a trailing newline
