@@ -348,9 +348,10 @@ func loadEmbeddedDefaults() *Config {
 	return cfg
 }
 
-// Init loads configuration from files, creating defaults if necessary.
+// Init loads configuration from files.
 // If loading fails, it falls back to embedded defaults.
 // If a profile is set via SetProfile(), loads from profiles/<name>.toml instead.
+// Note: This does not auto-create config files. Use EnsureConfigFiles() if needed.
 func Init() error {
 	if configInitialized {
 		return nil
@@ -359,13 +360,6 @@ func Init() error {
 	configDir, err := GetConfigDir()
 	if err != nil {
 		logger.Debug("failed to get config dir, using embedded defaults", "error", err)
-		globalConfig = loadEmbeddedDefaults()
-		configInitialized = true
-		return err
-	}
-
-	if err := EnsureConfigFiles(configDir); err != nil {
-		logger.Debug("failed to ensure config files, using embedded defaults", "error", err)
 		globalConfig = loadEmbeddedDefaults()
 		configInitialized = true
 		return err
