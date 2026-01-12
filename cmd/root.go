@@ -67,6 +67,11 @@ func initApp() {
 	// Initialize logger
 	logger.Init(logger.Options{Verbose: verbose})
 
+	// Set profile before initializing config
+	if profile != "" {
+		config.SetProfile(profile)
+	}
+
 	// Initialize config
 	config.Init()
 

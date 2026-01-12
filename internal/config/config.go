@@ -31,7 +31,26 @@ var (
 	globalConfig *Config
 	// configInitialized tracks whether config has been loaded
 	configInitialized bool
+	// currentProfile is the profile name to use (empty for default)
+	currentProfile string
 )
+
+// SetProfile sets the profile to use for configuration loading.
+// Must be called before Init() to take effect.
+func SetProfile(profile string) {
+	currentProfile = profile
+}
+
+// GetProfile returns the current profile name.
+func GetProfile() string {
+	return currentProfile
+}
+
+// GetProfilePath returns the path to a profile config file.
+// Profiles are stored in ~/.config/mmi/profiles/<name>.toml
+func GetProfilePath(configDir, profile string) string {
+	return filepath.Join(configDir, "profiles", profile+".toml")
+}
 
 // GetConfigDir returns the config directory path.
 // Uses MMI_CONFIG env var if set, otherwise ~/.config/mmi
@@ -331,6 +350,7 @@ func loadEmbeddedDefaults() *Config {
 
 // Init loads configuration from files, creating defaults if necessary.
 // If loading fails, it falls back to embedded defaults.
+// If a profile is set via SetProfile(), loads from profiles/<name>.toml instead.
 func Init() error {
 	if configInitialized {
 		return nil
@@ -351,17 +371,38 @@ func Init() error {
 		return err
 	}
 
-	// Load config
-	configPath := filepath.Join(configDir, "config.toml")
+	// Determine config path based on profile
+	var configPath string
+	if currentProfile != "" {
+		configPath = GetProfilePath(configDir, currentProfile)
+		logger.Debug("using profile", "profile", currentProfile, "path", configPath)
+	} else {
+		configPath = filepath.Join(configDir, "config.toml")
+	}
+
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
+		if currentProfile != "" {
+			// Profile specified but not found - this is an error
+			logger.Debug("profile not found", "profile", currentProfile, "path", configPath, "error", err)
+			globalConfig = loadEmbeddedDefaults()
+			configInitialized = true
+			return fmt.Errorf("profile %q not found: %w", currentProfile, err)
+		}
+		// Default config not found - use embedded
 		logger.Debug("failed to read config file, using embedded defaults", "path", configPath, "error", err)
 		globalConfig = loadEmbeddedDefaults()
 		configInitialized = true
 		return fmt.Errorf("failed to read config.toml: %w", err)
 	}
 
-	globalConfig, err = LoadConfigWithDir(configData, configDir)
+	// For profiles, use the profiles directory for includes
+	includeDir := configDir
+	if currentProfile != "" {
+		includeDir = filepath.Join(configDir, "profiles")
+	}
+
+	globalConfig, err = LoadConfigWithDir(configData, includeDir)
 	if err != nil {
 		logger.Debug("failed to parse config, using embedded defaults", "error", err)
 		globalConfig = loadEmbeddedDefaults()
@@ -371,6 +412,7 @@ func Init() error {
 
 	logger.Debug("config loaded successfully",
 		"path", configPath,
+		"profile", currentProfile,
 		"wrappers", len(globalConfig.WrapperPatterns),
 		"commands", len(globalConfig.SafeCommands))
 	configInitialized = true
@@ -390,6 +432,7 @@ func Get() *Config {
 func Reset() {
 	configInitialized = false
 	globalConfig = nil
+	currentProfile = ""
 }
 
 // GetDefaultConfig returns the embedded default configuration.
