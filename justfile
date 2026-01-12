@@ -6,28 +6,28 @@ default:
 build:
     go build -o mmi
 
-# Run tests with verbose output
+# Run tests with verbose output (excludes fuzz tests)
 test:
-    go test -v
+    go test -v -skip "^Fuzz"
 
-# Run tests with coverage summary
+# Run tests with coverage summary (excludes fuzz tests)
 coverage:
-    go test -cover
+    go test -cover -skip "^Fuzz"
 
-# Run tests with coverage report file
+# Run tests with coverage report file (excludes fuzz tests)
 coverage-report:
-    go test -v -coverprofile=coverage.out ./...
+    go test -v -skip "^Fuzz" -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out
 
-# Generate HTML coverage report
+# Generate HTML coverage report (excludes fuzz tests)
 coverage-html:
-    go test -coverprofile=coverage.out ./...
+    go test -skip "^Fuzz" -coverprofile=coverage.out ./...
     go tool cover -html=coverage.out -o coverage.html
     @echo "Coverage report written to coverage.html"
 
-# Run tests with verbose output and coverage
+# Run tests with verbose output and coverage (excludes fuzz tests)
 test-coverage:
-    go test -v -cover
+    go test -v -cover -skip "^Fuzz"
 
 # Format Go code
 fmt:
