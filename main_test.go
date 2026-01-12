@@ -15,6 +15,93 @@ import (
 	"github.com/dgerlanc/mmi/internal/patterns"
 )
 
+// testConfig contains all patterns needed for testing
+const testConfig = `
+# Test configuration with comprehensive patterns for testing
+
+# Wrappers
+[[wrappers.simple]]
+name = "env"
+commands = ["env", "do"]
+
+[[wrappers.command]]
+command = "timeout"
+flags = ["<arg>"]
+
+[[wrappers.command]]
+command = "nice"
+flags = ["-n <arg>", ""]
+
+[[wrappers.regex]]
+pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+name = "env vars"
+
+[[wrappers.regex]]
+pattern = '^([^\s]*/)?\.venv/bin/'
+name = ".venv"
+
+# Commands - subcommands
+[[commands.subcommand]]
+command = "git"
+subcommands = ["status", "add", "diff", "log", "commit", "push", "pull", "fetch", "checkout", "branch", "merge", "rebase", "stash", "reset", "show", "tag", "clone", "remote", "init"]
+flags = ["-C <arg>"]
+
+[[commands.subcommand]]
+command = "npm"
+subcommands = ["install", "run", "test", "build", "start", "ci", "audit", "outdated", "list", "ls", "view", "init", "publish", "pack", "link", "unlink", "update", "prune", "dedupe", "cache"]
+
+[[commands.subcommand]]
+command = "cargo"
+subcommands = ["build", "run", "test", "bench", "check", "clean", "doc", "publish", "install", "uninstall", "search", "update", "fmt", "clippy", "add", "remove", "tree", "metadata", "locate-project", "verify-project", "fetch", "generate-lockfile", "new", "init"]
+flags = ["--release", "-p <arg>", "--package <arg>", "--bin <arg>", "--lib", "--features <arg>", "--all-features", "--no-default-features"]
+
+[[commands.subcommand]]
+command = "uv"
+subcommands = ["pip", "run", "sync", "venv", "add", "remove", "lock"]
+
+[[commands.subcommand]]
+command = "maturin"
+subcommands = ["build", "develop", "publish", "sdist", "init", "new", "list-python", "upload"]
+
+# Commands - simple
+[[commands.simple]]
+name = "simple"
+commands = ["pytest", "python", "python3", "node", "ruby", "perl", "php", "java", "javac", "scala", "go", "rustc", "gcc", "g++", "clang", "make", "cmake", "ninja", "ruff", "black", "isort", "mypy", "pylint", "flake8", "eslint", "prettier", "tsc"]
+
+[[commands.simple]]
+name = "read-only"
+commands = ["ls", "cat", "head", "tail", "less", "more", "file", "stat", "wc", "du", "df", "pwd", "whoami", "hostname", "date", "cal", "uptime", "free", "which", "whereis", "type", "printenv", "env", "id", "groups", "w", "who", "last", "ps", "pgrep", "top", "htop", "lsof", "netstat", "ss", "ip", "ifconfig", "ping", "traceroute", "dig", "nslookup", "host", "curl", "tree", "find", "locate", "grep", "egrep", "fgrep", "rg", "ag", "ack", "sed", "awk", "cut", "sort", "uniq", "diff", "comm", "join", "paste", "tr", "tee", "xargs", "strings", "xxd", "hexdump", "od", "base64", "md5sum", "sha256sum", "sha1sum", "jq", "yq", "xmllint"]
+
+[[commands.simple]]
+name = "process-mgmt"
+commands = ["kill", "pkill", "killall"]
+
+[[commands.simple]]
+name = "loops"
+commands = ["done", "fi", "esac"]
+
+# Commands - regex
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+[[commands.regex]]
+pattern = '^source\s+.*\.venv.*/bin/activate'
+name = "venv activate"
+
+[[commands.regex]]
+pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
+name = "var assignment"
+
+[[commands.regex]]
+pattern = '^for\s+\w+\s+in\s'
+name = "for loop"
+
+[[commands.regex]]
+pattern = '^while\s'
+name = "while loop"
+`
+
 // TestMain sets up config for all tests
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "mmi-test-*")
@@ -26,8 +113,8 @@ func TestMain(m *testing.M) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Unsetenv("MMI_CONFIG")
 
-	// Write the embedded default config for tests
-	if err := config.EnsureConfigFiles(tmpDir); err != nil {
+	// Write test-specific config
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
 		os.Exit(1)
 	}
 
@@ -244,6 +331,7 @@ func runMmi(t *testing.T, input string) (string, int) {
 
 	cmd = exec.Command("./mmi_test_binary")
 	cmd.Stdin = strings.NewReader(input)
+	cmd.Env = os.Environ() // Inherit environment including MMI_CONFIG
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
