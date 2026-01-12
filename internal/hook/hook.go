@@ -10,7 +10,7 @@ import (
 	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/logger"
-	"github.com/dgerlanc/mmi/patterns"
+	"github.com/dgerlanc/mmi/internal/patterns"
 	"mvdan.cc/sh/v3/syntax"
 )
 

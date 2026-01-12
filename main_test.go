@@ -12,7 +12,7 @@ import (
 
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/hook"
-	"github.com/dgerlanc/mmi/patterns"
+	"github.com/dgerlanc/mmi/internal/patterns"
 )
 
 // TestMain sets up config for all tests
