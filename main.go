@@ -51,7 +51,6 @@ type HookSpecificOutput struct {
 	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
-
 // RegexEntry represents a raw regex pattern in the config
 type RegexEntry struct {
 	Pattern string `toml:"pattern"`
@@ -120,7 +119,6 @@ func ensureConfigFiles(configDir string) error {
 
 	return nil
 }
-
 
 // parseSection parses a config section and returns compiled patterns.
 // isWrapper indicates if this is a wrapper section (affects pattern generation).
