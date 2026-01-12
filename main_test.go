@@ -132,13 +132,13 @@ func TestProcess(t *testing.T) {
 		expectReason   string
 	}{
 		// Safe commands
-		{"simple git status", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, true, "git read op"},
-		{"pytest", `{"tool_name":"Bash","tool_input":{"command":"pytest"}}`, true, "pytest"},
-		{"chained safe", `{"tool_name":"Bash","tool_input":{"command":"git add . && git status"}}`, true, "git write op | git read op"},
-		{"with wrapper", `{"tool_name":"Bash","tool_input":{"command":"timeout 30 pytest -v"}}`, true, "timeout + pytest"},
-		{"env vars wrapper", `{"tool_name":"Bash","tool_input":{"command":"FOO=bar pytest"}}`, true, "env vars + pytest"},
-		{"complex chain", `{"tool_name":"Bash","tool_input":{"command":"git status && pytest && echo done"}}`, true, "git read op | pytest | echo"},
-		{"venv python", `{"tool_name":"Bash","tool_input":{"command":".venv/bin/python script.py"}}`, true, ".venv + python"},
+		{"simple git status", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, true, "git"},
+		{"pytest", `{"tool_name":"Bash","tool_input":{"command":"pytest"}}`, true, "simple"},
+		{"chained safe", `{"tool_name":"Bash","tool_input":{"command":"git add . && git status"}}`, true, "git | git"},
+		{"with wrapper", `{"tool_name":"Bash","tool_input":{"command":"timeout 30 pytest -v"}}`, true, "timeout + simple"},
+		{"env vars wrapper", `{"tool_name":"Bash","tool_input":{"command":"FOO=bar pytest"}}`, true, "env vars + simple"},
+		{"complex chain", `{"tool_name":"Bash","tool_input":{"command":"git status && pytest && echo done"}}`, true, "git | simple | simple"},
+		{"venv python", `{"tool_name":"Bash","tool_input":{"command":".venv/bin/python script.py"}}`, true, ".venv + simple"},
 
 		// Unsafe commands
 		{"dangerous $()", `{"tool_name":"Bash","tool_input":{"command":"echo $(whoami)"}}`, false, ""},
@@ -350,56 +350,64 @@ func TestStripWrappers(t *testing.T) {
 
 func TestCheckSafe(t *testing.T) {
 	// Test cases grouped by category
+	// Note: Pattern names are now section names from config.toml
 	safeTests := []struct {
 		name     string
 		input    string
 		expected string // non-empty means safe
 	}{
-		// Git read operations
-		{"git diff", "git diff", "git read op"},
-		{"git diff with path", "git diff src/", "git read op"},
-		{"git log", "git log", "git read op"},
-		{"git log -n", "git log -n 10", "git read op"},
-		{"git status", "git status", "git read op"},
-		{"git show", "git show HEAD", "git read op"},
-		{"git branch", "git branch", "git read op"},
-		{"git branch -a", "git branch -a", "git read op"},
-		{"git stash list", "git stash list", "git read op"},
-		{"git bisect", "git bisect good", "git read op"},
-		{"git worktree list", "git worktree list", "git read op"},
-		{"git fetch", "git fetch origin", "git read op"},
-		{"git -C diff", "git -C /path diff", "git read op"},
-		{"git -C log", "git -C /project log --oneline", "git read op"},
+		// Git operations (all in [commands.git] section)
+		{"git diff", "git diff", "git"},
+		{"git diff with path", "git diff src/", "git"},
+		{"git log", "git log", "git"},
+		{"git log -n", "git log -n 10", "git"},
+		{"git status", "git status", "git"},
+		{"git show", "git show HEAD", "git"},
+		{"git branch", "git branch", "git"},
+		{"git branch -a", "git branch -a", "git"},
+		{"git stash", "git stash", "git"},
+		{"git stash list", "git stash list", "git"},
+		{"git bisect", "git bisect good", "git"},
+		{"git worktree", "git worktree list", "git"},
+		{"git fetch", "git fetch origin", "git"},
+		{"git -C diff", "git -C /path diff", "git"},
+		{"git -C log", "git -C /project log --oneline", "git"},
+		{"git add", "git add .", "git"},
+		{"git add file", "git add file.txt", "git"},
+		{"git checkout", "git checkout main", "git"},
+		{"git checkout -b", "git checkout -b feature", "git"},
+		{"git merge", "git merge feature", "git"},
+		{"git rebase", "git rebase main", "git"},
+		{"git -C add", "git -C /path add .", "git"},
 
-		// Git write operations
-		{"git add", "git add .", "git write op"},
-		{"git add file", "git add file.txt", "git write op"},
-		{"git checkout", "git checkout main", "git write op"},
-		{"git checkout -b", "git checkout -b feature", "git write op"},
-		{"git merge", "git merge feature", "git write op"},
-		{"git rebase", "git rebase main", "git write op"},
-		{"git stash", "git stash", "git write op"},
-		{"git stash pop", "git stash pop", "git write op"},
-		{"git -C add", "git -C /path add .", "git write op"},
+		// Simple commands (in [commands.simple] section)
+		{"pytest", "pytest", "simple"},
+		{"pytest -v", "pytest -v", "simple"},
+		{"pytest path", "pytest tests/", "simple"},
+		{"pytest -x", "pytest -x --tb=short", "simple"},
+		{"python", "python", "simple"},
+		{"python script", "python script.py", "simple"},
+		{"python -m", "python -m pytest", "simple"},
+		{"python -c", "python -c 'print(1)'", "simple"},
+		{"ruff", "ruff", "simple"},
+		{"ruff check", "ruff check .", "simple"},
+		{"ruff format", "ruff format src/", "simple"},
+		{"uvx", "uvx", "simple"},
+		{"uvx tool", "uvx ruff check", "simple"},
+		{"npx", "npx", "simple"},
+		{"npx tool", "npx eslint .", "simple"},
+		{"make", "make", "simple"},
+		{"make target", "make build", "simple"},
+		{"make with var", "make VERBOSE=1", "simple"},
+		{"touch", "touch file.txt", "simple"},
+		{"touch multiple", "touch a.txt b.txt", "simple"},
+		{"echo", "echo", "simple"},
+		{"echo message", "echo hello world", "simple"},
+		{"echo -n", "echo -n test", "simple"},
+		{"sleep 1", "sleep 1", "simple"},
+		{"sleep 30", "sleep 30", "simple"},
 
-		// pytest
-		{"pytest", "pytest", "pytest"},
-		{"pytest -v", "pytest -v", "pytest"},
-		{"pytest path", "pytest tests/", "pytest"},
-		{"pytest -x", "pytest -x --tb=short", "pytest"},
-
-		// python
-		{"python", "python", "python"},
-		{"python script", "python script.py", "python"},
-		{"python -m", "python -m pytest", "python"},
-		{"python -c", "python -c 'print(1)'", "python"},
-
-		// ruff
-		{"ruff", "ruff", "ruff"},
-		{"ruff check", "ruff check .", "ruff"},
-		{"ruff format", "ruff format src/", "ruff"},
-
-		// uv commands
+		// uv commands (in [commands.uv] section)
 		{"uv pip", "uv pip install package", "uv"},
 		{"uv run", "uv run pytest", "uv"},
 		{"uv sync", "uv sync", "uv"},
@@ -408,22 +416,14 @@ func TestCheckSafe(t *testing.T) {
 		{"uv remove", "uv remove package", "uv"},
 		{"uv lock", "uv lock", "uv"},
 
-		// uvx
-		{"uvx", "uvx", "uvx"},
-		{"uvx tool", "uvx ruff check", "uvx"},
-
-		// npm commands
+		// npm commands (in [commands.npm] section)
 		{"npm install", "npm install", "npm"},
 		{"npm run", "npm run build", "npm"},
 		{"npm test", "npm test", "npm"},
 		{"npm build", "npm build", "npm"},
 		{"npm ci", "npm ci", "npm"},
 
-		// npx
-		{"npx", "npx", "npx"},
-		{"npx tool", "npx eslint .", "npx"},
-
-		// cargo commands
+		// cargo commands (in [commands.cargo] section)
 		{"cargo build", "cargo build", "cargo"},
 		{"cargo build release", "cargo build --release", "cargo"},
 		{"cargo test", "cargo test", "cargo"},
@@ -433,16 +433,11 @@ func TestCheckSafe(t *testing.T) {
 		{"cargo fmt", "cargo fmt", "cargo"},
 		{"cargo clean", "cargo clean", "cargo"},
 
-		// maturin
+		// maturin (in [commands.maturin] section)
 		{"maturin develop", "maturin develop", "maturin"},
 		{"maturin build", "maturin build", "maturin"},
 
-		// make
-		{"make", "make", "make"},
-		{"make target", "make build", "make"},
-		{"make with var", "make VERBOSE=1", "make"},
-
-		// Read-only commands
+		// Read-only commands (in [commands.read-only] section)
 		{"ls", "ls", "read-only"},
 		{"ls -la", "ls -la", "read-only"},
 		{"cat", "cat file.txt", "read-only"},
@@ -466,52 +461,33 @@ func TestCheckSafe(t *testing.T) {
 		{"sed", "sed 's/a/b/g'", "read-only"},
 		{"xargs", "xargs echo", "read-only"},
 
-		// touch
-		{"touch", "touch file.txt", "touch"},
-		{"touch multiple", "touch a.txt b.txt", "touch"},
+		// Process management (in [commands.process-mgmt] section)
+		{"pkill", "pkill process", "process-mgmt"},
+		{"kill", "kill 1234", "process-mgmt"},
+		{"kill -9", "kill -9 1234", "process-mgmt"},
 
-		// Shell builtins
+		// Loops (in [commands.loops] section)
+		{"done", "done", "loops"},
+
+		// Regex patterns (from [[commands.regex]] sections)
 		{"true", "true", "shell builtin"},
 		{"false", "false", "shell builtin"},
 		{"exit", "exit", "shell builtin"},
 		{"exit 0", "exit 0", "shell builtin"},
 		{"exit 1", "exit 1", "shell builtin"},
-
-		// Process management
-		{"pkill", "pkill process", "process mgmt"},
-		{"kill", "kill 1234", "process mgmt"},
-		{"kill -9", "kill -9 1234", "process mgmt"},
-
-		// echo
-		{"echo", "echo", "echo"},
-		{"echo message", "echo hello world", "echo"},
-		{"echo -n", "echo -n test", "echo"},
-
-		// cd
 		{"cd dir", "cd dir", "cd"},
 		{"cd path", "cd /path/to/dir", "cd"},
 		{"cd home", "cd ~", "cd"},
-
-		// venv activate
 		{"source venv activate", "source .venv/bin/activate", "venv activate"},
 		{"dot venv activate", ". venv/bin/activate", "venv activate"},
 		{"source no dot", "source venv/bin/activate", "venv activate"},
-
-		// sleep
-		{"sleep 1", "sleep 1", "sleep"},
-		{"sleep 30", "sleep 30", "sleep"},
-
-		// Variable assignment
 		{"var assignment", "FOO=bar", "var assignment"},
 		{"var assignment special", "VAR=$!", "var assignment"},
 		{"var assignment number", "COUNT=0", "var assignment"},
-
-		// Loop constructs
 		{"for loop", "for x in a b c", "for loop"},
 		{"for loop files", "for f in *.txt", "for loop"},
 		{"while loop", "while true", "while loop"},
 		{"while read", "while read line", "while loop"},
-		{"done", "done", "done"},
 	}
 
 	for _, tt := range safeTests {
@@ -600,13 +576,13 @@ func TestIntegrationSafeCommands(t *testing.T) {
 		expectApproval bool
 		expectReason   string
 	}{
-		{"simple git status", "git status", true, "git read op"},
-		{"pytest", "pytest", true, "pytest"},
-		{"chained safe", "git add . && git status", true, "git write op | git read op"},
-		{"with wrapper", "timeout 30 pytest -v", true, "timeout + pytest"},
-		{"env vars wrapper", "FOO=bar pytest", true, "env vars + pytest"},
-		{"complex chain", "git status && pytest && echo done", true, "git read op | pytest | echo"},
-		{"venv python", ".venv/bin/python script.py", true, ".venv + python"},
+		{"simple git status", "git status", true, "git"},
+		{"pytest", "pytest", true, "simple"},
+		{"chained safe", "git add . && git status", true, "git"},
+		{"with wrapper", "timeout 30 pytest -v", true, "timeout + simple"},
+		{"env vars wrapper", "FOO=bar pytest", true, "env vars + simple"},
+		{"complex chain", "git status && pytest && echo done", true, "git"},
+		{"venv python", ".venv/bin/python script.py", true, ".venv + simple"},
 	}
 
 	for _, tt := range tests {
@@ -842,69 +818,100 @@ func TestEnsureConfigFiles(t *testing.T) {
 		t.Errorf("ensureConfigFiles() error = %v", err)
 	}
 
-	// Check files exist
-	wrappersPath := filepath.Join(configDir, "wrappers.toml")
-	commandsPath := filepath.Join(configDir, "commands.toml")
+	// Check file exists
+	configPath := filepath.Join(configDir, "config.toml")
 
-	if _, err := os.Stat(wrappersPath); os.IsNotExist(err) {
-		t.Error("wrappers.toml was not created")
-	}
-	if _, err := os.Stat(commandsPath); os.IsNotExist(err) {
-		t.Error("commands.toml was not created")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Error("config.toml was not created")
 	}
 
 	// Second call should not overwrite existing files
-	originalContent, _ := os.ReadFile(wrappersPath)
+	originalContent, _ := os.ReadFile(configPath)
 	err = ensureConfigFiles(configDir)
 	if err != nil {
 		t.Errorf("second ensureConfigFiles() error = %v", err)
 	}
-	newContent, _ := os.ReadFile(wrappersPath)
+	newContent, _ := os.ReadFile(configPath)
 	if !bytes.Equal(originalContent, newContent) {
 		t.Error("ensureConfigFiles() overwrote existing file")
 	}
 }
 
-func TestLoadPatterns(t *testing.T) {
-	t.Run("valid TOML", func(t *testing.T) {
+func TestLoadConfig(t *testing.T) {
+	t.Run("valid TOML with simple commands", func(t *testing.T) {
 		tomlData := []byte(`
-[[wrapper]]
-pattern = "^test\\s+"
-name = "test"
+[commands.simple]
+commands = ["pytest", "python"]
 
-[[wrapper]]
-pattern = "^foo\\s+"
-name = "foo"
+[commands.git]
+subcommands = ["diff", "log", "status"]
+flags = ["-C <arg>"]
 `)
-		patterns, err := loadPatterns(tomlData, "wrapper")
+		wrappers, commands, err := loadConfig(tomlData)
 		if err != nil {
-			t.Errorf("loadPatterns() error = %v", err)
+			t.Errorf("loadConfig() error = %v", err)
 		}
-		if len(patterns) != 2 {
-			t.Errorf("loadPatterns() returned %d patterns, want 2", len(patterns))
+		if len(wrappers) != 0 {
+			t.Errorf("loadConfig() returned %d wrappers, want 0", len(wrappers))
 		}
-		if patterns[0].Name != "test" {
-			t.Errorf("patterns[0].Name = %q, want %q", patterns[0].Name, "test")
+		if len(commands) < 2 {
+			t.Errorf("loadConfig() returned %d commands, want at least 2", len(commands))
 		}
 	})
 
-	t.Run("invalid regex", func(t *testing.T) {
+	t.Run("valid TOML with regex patterns", func(t *testing.T) {
 		tomlData := []byte(`
-[[wrapper]]
+[[commands.regex]]
+pattern = "^test\\b"
+name = "test"
+
+[[commands.regex]]
+pattern = "^foo\\b"
+name = "foo"
+`)
+		_, commands, err := loadConfig(tomlData)
+		if err != nil {
+			t.Errorf("loadConfig() error = %v", err)
+		}
+		if len(commands) != 2 {
+			t.Errorf("loadConfig() returned %d commands, want 2", len(commands))
+		}
+	})
+
+	t.Run("invalid regex in regex section", func(t *testing.T) {
+		tomlData := []byte(`
+[[commands.regex]]
 pattern = "[invalid"
 name = "bad"
 `)
-		_, err := loadPatterns(tomlData, "wrapper")
+		_, _, err := loadConfig(tomlData)
 		if err == nil {
-			t.Error("loadPatterns() should return error for invalid regex")
+			t.Error("loadConfig() should return error for invalid regex")
 		}
 	})
 
 	t.Run("invalid TOML", func(t *testing.T) {
 		tomlData := []byte(`this is not valid toml {{{}}}`)
-		_, err := loadPatterns(tomlData, "wrapper")
+		_, _, err := loadConfig(tomlData)
 		if err == nil {
-			t.Error("loadPatterns() should return error for invalid TOML")
+			t.Error("loadConfig() should return error for invalid TOML")
+		}
+	})
+
+	t.Run("wrappers with flags", func(t *testing.T) {
+		tomlData := []byte(`
+[wrappers.timeout]
+flags = ["<arg>"]
+
+[wrappers.simple]
+commands = ["env"]
+`)
+		wrappers, _, err := loadConfig(tomlData)
+		if err != nil {
+			t.Errorf("loadConfig() error = %v", err)
+		}
+		if len(wrappers) < 2 {
+			t.Errorf("loadConfig() returned %d wrappers, want at least 2", len(wrappers))
 		}
 	})
 }
@@ -952,12 +959,9 @@ func TestInitConfig(t *testing.T) {
 			t.Error("safeCommands is empty after initConfig()")
 		}
 
-		// Verify files were created
-		if _, err := os.Stat(filepath.Join(configDir, "wrappers.toml")); os.IsNotExist(err) {
-			t.Error("wrappers.toml was not created")
-		}
-		if _, err := os.Stat(filepath.Join(configDir, "commands.toml")); os.IsNotExist(err) {
-			t.Error("commands.toml was not created")
+		// Verify config.toml was created
+		if _, err := os.Stat(filepath.Join(configDir, "config.toml")); os.IsNotExist(err) {
+			t.Error("config.toml was not created")
 		}
 	})
 }
@@ -979,19 +983,16 @@ func TestConfigCustomization(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Write custom config
-	wrappersToml := []byte(`
-[[wrapper]]
+	// Write custom config using new unified format
+	configToml := []byte(`
+[[wrappers.regex]]
 pattern = "^custom\\s+"
 name = "custom"
+
+[commands.mycommand]
+subcommands = ["arg"]
 `)
-	commandsToml := []byte(`
-[[command]]
-pattern = "^mycommand\\b"
-name = "mycommand"
-`)
-	os.WriteFile(filepath.Join(tmpDir, "wrappers.toml"), wrappersToml, 0644)
-	os.WriteFile(filepath.Join(tmpDir, "commands.toml"), commandsToml, 0644)
+	os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
 
 	// Set MMI_CONFIG
 	origEnv := os.Getenv("MMI_CONFIG")
@@ -1023,5 +1024,94 @@ name = "mycommand"
 	}
 	if checkSafe(core) != "mycommand" {
 		t.Errorf("Custom command not recognized as safe: %q", core)
+	}
+}
+
+// =============================================================================
+// Pattern Building Tests
+// =============================================================================
+
+func TestBuildFlagPattern(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"<arg>", `(\S+\s+)?`},
+		{"-f", `(-f\s+)?`},
+		{"-f <arg>", `(-f\s*\S+\s+)?`},
+		{"--verbose", `(--verbose\s+)?`},
+		{"--output <arg>", `(--output\s*\S+\s+)?`},
+		{"-C <arg>", `(-C\s*\S+\s+)?`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := buildFlagPattern(tt.input)
+			if got != tt.expected {
+				t.Errorf("buildFlagPattern(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildSimplePattern(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"pytest", `^pytest\b`},
+		{"python", `^python\b`},
+		{"make", `^make\b`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := buildSimplePattern(tt.input)
+			if got != tt.expected {
+				t.Errorf("buildSimplePattern(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildSubcommandPattern(t *testing.T) {
+	tests := []struct {
+		name        string
+		cmd         string
+		subcommands []string
+		flags       []string
+		expected    string
+	}{
+		{
+			"simple",
+			"git",
+			[]string{"diff", "log"},
+			nil,
+			`^git\s+(diff|log)\b`,
+		},
+		{
+			"with flag",
+			"git",
+			[]string{"diff", "log"},
+			[]string{"-C <arg>"},
+			`^git\s+(-C\s*\S+\s+)?(diff|log)\b`,
+		},
+		{
+			"npm",
+			"npm",
+			[]string{"install", "run", "test"},
+			nil,
+			`^npm\s+(install|run|test)\b`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSubcommandPattern(tt.cmd, tt.subcommands, tt.flags)
+			if got != tt.expected {
+				t.Errorf("buildSubcommandPattern() = %q, want %q", got, tt.expected)
+			}
+		})
 	}
 }
