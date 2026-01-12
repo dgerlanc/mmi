@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dgerlanc/mmi/patterns"
 )
 
 // TestMain sets up config for all tests
@@ -629,16 +631,16 @@ func TestBuildFlagPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			if got := buildFlagPattern(tt.input); got != tt.expected {
-				t.Errorf("buildFlagPattern(%q) = %q, want %q", tt.input, got, tt.expected)
+			if got := patterns.BuildFlagPattern(tt.input); got != tt.expected {
+				t.Errorf("BuildFlagPattern(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestBuildSimplePattern(t *testing.T) {
-	if got := buildSimplePattern("pytest"); got != `^pytest\b` {
-		t.Errorf("buildSimplePattern(pytest) = %q, want ^pytest\\b", got)
+	if got := patterns.BuildSimplePattern("pytest"); got != `^pytest\b` {
+		t.Errorf("BuildSimplePattern(pytest) = %q, want ^pytest\\b", got)
 	}
 }
 
@@ -656,8 +658,8 @@ func TestBuildSubcommandPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := buildSubcommandPattern(tt.cmd, tt.subcommands, tt.flags); got != tt.expected {
-				t.Errorf("buildSubcommandPattern() = %q, want %q", got, tt.expected)
+			if got := patterns.BuildSubcommandPattern(tt.cmd, tt.subcommands, tt.flags); got != tt.expected {
+				t.Errorf("BuildSubcommandPattern() = %q, want %q", got, tt.expected)
 			}
 		})
 	}
