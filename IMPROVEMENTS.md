@@ -6,7 +6,7 @@
 
 2. **Add structured logging** - Replace implicit error handling with structured logging (using `log/slog`) to help users debug why commands are rejected.
 
-3. **Consider using a command parser library** - The manual command chain splitting is complex and error-prone. A shell parser like `mvdan.cc/sh/v3` could handle edge cases more robustly.
+3. ~~**Consider using a command parser library**~~ ✓ IMPLEMENTED - Replaced manual regex-based command chain splitting with `mvdan.cc/sh/v3` shell parser for more robust handling of quoted strings, redirections, and shell syntax.
 
 ## Security Enhancements
 

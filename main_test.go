@@ -171,8 +171,10 @@ func TestSplitCommandChain(t *testing.T) {
 		{"OR chain", "cmd1 || cmd2", []string{"cmd1", "cmd2"}},
 		{"pipe", "cmd1 | cmd2", []string{"cmd1", "cmd2"}},
 		{"quoted AND", `echo "a && b"`, []string{`echo "a && b"`}},
-		{"redirection", "cmd 2>&1", []string{"cmd 2>&1"}},
-		{"backslash newline", "cmd \\\n arg", []string{"cmd  arg"}},
+		// Shell parser correctly separates redirections from commands
+		{"redirection", "cmd 2>&1", []string{"cmd"}},
+		// Shell parser normalizes backslash-newline continuations
+		{"backslash newline", "cmd \\\n arg", []string{"cmd \\\n\targ"}},
 	}
 
 	for _, tt := range tests {
