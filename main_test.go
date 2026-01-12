@@ -465,19 +465,24 @@ func TestInitConfig(t *testing.T) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Setenv("MMI_CONFIG", origEnv)
 
-	if err := config.Init(); err != nil {
-		t.Errorf("Init() error = %v", err)
+	// Init returns error when config doesn't exist, but falls back to embedded defaults
+	err = config.Init()
+	if err == nil {
+		t.Error("Init() should return error when config file doesn't exist")
 	}
 
+	// Config should still work with embedded defaults
 	cfg := config.Get()
 	if len(cfg.WrapperPatterns) == 0 {
-		t.Error("WrapperPatterns is empty")
+		t.Error("WrapperPatterns is empty - embedded defaults should be loaded")
 	}
 	if len(cfg.SafeCommands) == 0 {
-		t.Error("SafeCommands is empty")
+		t.Error("SafeCommands is empty - embedded defaults should be loaded")
 	}
-	if _, err := os.Stat(filepath.Join(tmpDir, "config.toml")); os.IsNotExist(err) {
-		t.Error("config.toml was not created")
+
+	// Config file should NOT be auto-created
+	if _, err := os.Stat(filepath.Join(tmpDir, "config.toml")); err == nil {
+		t.Error("config.toml should not be auto-created")
 	}
 }
 

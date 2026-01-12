@@ -72,7 +72,7 @@ func initApp() {
 		config.SetProfile(profile)
 	}
 
-	// Initialize config
+	// Initialize config (uses embedded defaults if no config file exists)
 	config.Init()
 
 	// Initialize audit logging (unless disabled)
