@@ -454,7 +454,8 @@ commands = ["pytest", "python"]
 
 	t.Run("subcommands with flags", func(t *testing.T) {
 		tomlData := []byte(`
-[commands.git]
+[[commands.subcommand]]
+command = "git"
 subcommands = ["diff", "log"]
 flags = ["-C <arg>"]
 `)
@@ -484,7 +485,8 @@ name = "test"
 
 	t.Run("wrappers", func(t *testing.T) {
 		tomlData := []byte(`
-[wrappers.timeout]
+[[wrappers.command]]
+command = "timeout"
 flags = ["<arg>"]
 
 [wrappers.simple]
@@ -577,7 +579,8 @@ func TestConfigCustomization(t *testing.T) {
 pattern = "^custom\\s+"
 name = "custom"
 
-[commands.mycommand]
+[[commands.subcommand]]
+command = "mycommand"
 subcommands = ["arg"]
 `)
 	os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
