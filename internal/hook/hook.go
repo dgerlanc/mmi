@@ -39,8 +39,11 @@ type SpecificOutput struct {
 	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
-// dangerousPattern matches command substitution syntax
-var dangerousPattern = regexp.MustCompile(`\$\(|` + "`")
+// subshellPattern matches $(...) command substitution syntax
+var subshellPattern = regexp.MustCompile(`\$\(`)
+
+// backtickPattern matches `...` command substitution syntax
+var backtickPattern = regexp.MustCompile("`")
 
 // currentProfile holds the current profile name for audit logging
 var currentProfile string
@@ -74,14 +77,19 @@ func ProcessWithResult(r io.Reader) Result {
 	cmd := input.ToolInput["command"]
 	logger.Debug("processing command", "command", cmd)
 
-	// Reject dangerous constructs (command substitution)
-	if dangerousPattern.MatchString(cmd) {
-		logger.Debug("rejected dangerous pattern", "command", cmd)
+	cfg := config.Get()
+
+	// Check for dangerous constructs (command substitution) based on config
+	if !cfg.Security.AllowSubshells && subshellPattern.MatchString(cmd) {
+		logger.Debug("rejected subshell pattern", "command", cmd)
 		logAudit(cmd, false, "")
 		return Result{Command: cmd, Approved: false}
 	}
-
-	cfg := config.Get()
+	if !cfg.Security.AllowBackticks && backtickPattern.MatchString(cmd) {
+		logger.Debug("rejected backtick pattern", "command", cmd)
+		logAudit(cmd, false, "")
+		return Result{Command: cmd, Approved: false}
+	}
 
 	// Check deny list FIRST (before any approval checks)
 	if denyReason := CheckDeny(cmd, cfg.DenyPatterns); denyReason != "" {

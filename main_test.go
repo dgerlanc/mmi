@@ -541,6 +541,210 @@ name = "bad"
 			t.Error("LoadConfig() should return error for invalid TOML")
 		}
 	})
+
+	t.Run("security section defaults", func(t *testing.T) {
+		tomlData := []byte(`
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		cfg, err := config.LoadConfig(tomlData)
+		if err != nil {
+			t.Errorf("LoadConfig() error = %v", err)
+		}
+		if cfg.Security.AllowSubshells {
+			t.Error("AllowSubshells should default to false")
+		}
+		if cfg.Security.AllowBackticks {
+			t.Error("AllowBackticks should default to false")
+		}
+	})
+
+	t.Run("security section allow subshells", func(t *testing.T) {
+		tomlData := []byte(`
+[security]
+allow_subshells = true
+allow_backticks = false
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		cfg, err := config.LoadConfig(tomlData)
+		if err != nil {
+			t.Errorf("LoadConfig() error = %v", err)
+		}
+		if !cfg.Security.AllowSubshells {
+			t.Error("AllowSubshells should be true")
+		}
+		if cfg.Security.AllowBackticks {
+			t.Error("AllowBackticks should be false")
+		}
+	})
+
+	t.Run("security section allow backticks", func(t *testing.T) {
+		tomlData := []byte(`
+[security]
+allow_subshells = false
+allow_backticks = true
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		cfg, err := config.LoadConfig(tomlData)
+		if err != nil {
+			t.Errorf("LoadConfig() error = %v", err)
+		}
+		if cfg.Security.AllowSubshells {
+			t.Error("AllowSubshells should be false")
+		}
+		if !cfg.Security.AllowBackticks {
+			t.Error("AllowBackticks should be true")
+		}
+	})
+
+	t.Run("security section allow both", func(t *testing.T) {
+		tomlData := []byte(`
+[security]
+allow_subshells = true
+allow_backticks = true
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		cfg, err := config.LoadConfig(tomlData)
+		if err != nil {
+			t.Errorf("LoadConfig() error = %v", err)
+		}
+		if !cfg.Security.AllowSubshells {
+			t.Error("AllowSubshells should be true")
+		}
+		if !cfg.Security.AllowBackticks {
+			t.Error("AllowBackticks should be true")
+		}
+	})
+}
+
+func TestSecuritySettings(t *testing.T) {
+	t.Run("subshells rejected by default", func(t *testing.T) {
+		config.Reset()
+		tmpDir, err := os.MkdirTemp("", "mmi-sec-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configToml := []byte(`
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
+
+		origEnv := os.Getenv("MMI_CONFIG")
+		os.Setenv("MMI_CONFIG", tmpDir)
+		defer os.Setenv("MMI_CONFIG", origEnv)
+
+		config.Init()
+
+		input := `{"tool_name":"Bash","tool_input":{"command":"echo $(whoami)"}}`
+		approved, _ := hook.Process(strings.NewReader(input))
+		if approved {
+			t.Error("Subshells should be rejected by default")
+		}
+	})
+
+	t.Run("backticks rejected by default", func(t *testing.T) {
+		config.Reset()
+		tmpDir, err := os.MkdirTemp("", "mmi-sec-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configToml := []byte(`
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
+
+		origEnv := os.Getenv("MMI_CONFIG")
+		os.Setenv("MMI_CONFIG", tmpDir)
+		defer os.Setenv("MMI_CONFIG", origEnv)
+
+		config.Init()
+
+		input := "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo `whoami`\"}}"
+		approved, _ := hook.Process(strings.NewReader(input))
+		if approved {
+			t.Error("Backticks should be rejected by default")
+		}
+	})
+
+	t.Run("subshells allowed when configured", func(t *testing.T) {
+		config.Reset()
+		tmpDir, err := os.MkdirTemp("", "mmi-sec-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configToml := []byte(`
+[security]
+allow_subshells = true
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
+
+		origEnv := os.Getenv("MMI_CONFIG")
+		os.Setenv("MMI_CONFIG", tmpDir)
+		defer os.Setenv("MMI_CONFIG", origEnv)
+
+		config.Init()
+
+		input := `{"tool_name":"Bash","tool_input":{"command":"echo $(pwd)"}}`
+		approved, _ := hook.Process(strings.NewReader(input))
+		if !approved {
+			t.Error("Subshells should be allowed when configured")
+		}
+	})
+
+	t.Run("backticks allowed when configured", func(t *testing.T) {
+		config.Reset()
+		tmpDir, err := os.MkdirTemp("", "mmi-sec-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		configToml := []byte(`
+[security]
+allow_backticks = true
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+		os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
+
+		origEnv := os.Getenv("MMI_CONFIG")
+		os.Setenv("MMI_CONFIG", tmpDir)
+		defer os.Setenv("MMI_CONFIG", origEnv)
+
+		config.Init()
+
+		input := "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo `pwd`\"}}"
+		approved, _ := hook.Process(strings.NewReader(input))
+		if !approved {
+			t.Error("Backticks should be allowed when configured")
+		}
+	})
 }
 
 func TestInitConfig(t *testing.T) {

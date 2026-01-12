@@ -16,6 +16,14 @@ import (
 //go:embed config.toml
 var defaultConfig []byte
 
+// Security holds security-related configuration options.
+type Security struct {
+	// AllowSubshells allows $(...) command substitution syntax when true
+	AllowSubshells bool
+	// AllowBackticks allows `...` command substitution syntax when true
+	AllowBackticks bool
+}
+
 // Config holds the compiled patterns from configuration.
 type Config struct {
 	// WrapperPatterns are safe prefixes that can wrap commands
@@ -24,6 +32,8 @@ type Config struct {
 	SafeCommands []patterns.Pattern
 	// DenyPatterns are patterns that are always rejected (checked before approval)
 	DenyPatterns []patterns.Pattern
+	// Security holds security-related configuration options
+	Security Security
 }
 
 var (
@@ -266,6 +276,13 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			cfg.WrapperPatterns = append(cfg.WrapperPatterns, includeCfg.WrapperPatterns...)
 			cfg.SafeCommands = append(cfg.SafeCommands, includeCfg.SafeCommands...)
 			cfg.DenyPatterns = append(cfg.DenyPatterns, includeCfg.DenyPatterns...)
+			// Security settings: allow if any included config allows
+			if includeCfg.Security.AllowSubshells {
+				cfg.Security.AllowSubshells = true
+			}
+			if includeCfg.Security.AllowBackticks {
+				cfg.Security.AllowBackticks = true
+			}
 		}
 	}
 
@@ -292,6 +309,16 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			return nil, fmt.Errorf("failed to parse deny: %w", err)
 		}
 		cfg.DenyPatterns = append(cfg.DenyPatterns, deny...)
+	}
+
+	// Parse security section
+	if securitySection, ok := raw["security"].(map[string]any); ok {
+		if allowSubshells, ok := securitySection["allow_subshells"].(bool); ok {
+			cfg.Security.AllowSubshells = allowSubshells
+		}
+		if allowBackticks, ok := securitySection["allow_backticks"].(bool); ok {
+			cfg.Security.AllowBackticks = allowBackticks
+		}
 	}
 
 	return cfg, nil
