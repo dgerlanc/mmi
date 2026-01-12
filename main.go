@@ -1,7 +1,8 @@
 // mmi (mother may I?) - Claude Code PreToolUse Hook for Bash Command Approval
 //
 // This hook auto-approves Bash commands that are safe combinations of:
-//   WRAPPERS (timeout, env vars, .venv/bin/) + CORE COMMANDS (git, pytest, etc.)
+//
+//	WRAPPERS (timeout, env vars, .venv/bin/) + CORE COMMANDS (git, pytest, etc.)
 //
 // Usage in ~/.claude/settings.json:
 //
