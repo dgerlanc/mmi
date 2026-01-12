@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // HookInput represents the JSON input from Claude Code
@@ -87,20 +88,6 @@ var configInitialized bool
 
 // Regex for dangerous constructs
 var dangerousPattern = regexp.MustCompile(`\$\(|` + "`")
-
-// Regex for splitting command chains
-var separatorPattern = regexp.MustCompile(`\s*(?:&&|\|\||;|\||&)\s*`)
-var separatorOrNewlinePattern = regexp.MustCompile(`\s*(?:&&|\|\||;|\||&)\s*|\n`)
-
-// Regex for backslash-newline continuations
-var backslashNewlinePattern = regexp.MustCompile(`\\\n\s*`)
-
-// Regex for quoted strings
-var doubleQuotePattern = regexp.MustCompile(`"[^"]*"`)
-var singleQuotePattern = regexp.MustCompile(`'[^']*'`)
-
-// Regex for redirections
-var redirPattern = regexp.MustCompile(`(\d*)>&(\d*)`)
 
 // osExit is a variable so it can be mocked in tests
 var osExit = os.Exit
@@ -471,54 +458,157 @@ func formatApproval(reason string) string {
 	return string(data) + "\n"
 }
 
-// splitCommandChain splits command into segments on &&, ||, ;, |
+// splitCommandChain splits command into segments on &&, ||, ;, |, & using a proper shell parser.
+// This handles quoted strings, redirections, and other shell syntax correctly.
 func splitCommandChain(cmd string) []string {
-	// Collapse backslash-newline continuations
-	cmd = backslashNewlinePattern.ReplaceAllString(cmd, " ")
-
-	// Protect quoted strings from splitting (replace with placeholders)
-	var quotedStrings []string
-	saveQuoted := func(s string) string {
-		quotedStrings = append(quotedStrings, s)
-		return "__QUOTED_" + string(rune('0'+len(quotedStrings)-1)) + "__"
+	if strings.TrimSpace(cmd) == "" {
+		return nil
 	}
 
-	cmd = doubleQuotePattern.ReplaceAllStringFunc(cmd, saveQuoted)
-	cmd = singleQuotePattern.ReplaceAllStringFunc(cmd, saveQuoted)
+	// Parse the command using the shell parser
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(cmd), "")
+	if err != nil {
+		// If parsing fails, fall back to treating it as a single command
+		return []string{strings.TrimSpace(cmd)}
+	}
 
-	// Normalize redirections to prevent splitting on & in 2>&1
-	cmd = redirPattern.ReplaceAllString(cmd, "__REDIR_${1}_${2}__")
-	cmd = strings.ReplaceAll(cmd, "&>", "__REDIR_AMPGT__")
-
-	// Split on command separators
 	var segments []string
-	if len(quotedStrings) > 0 {
-		segments = separatorPattern.Split(cmd, -1)
-	} else {
-		segments = separatorOrNewlinePattern.Split(cmd, -1)
+	printer := syntax.NewPrinter()
+
+	// Walk the AST to extract individual commands
+	for _, stmt := range prog.Stmts {
+		extractCommands(stmt.Cmd, printer, &segments)
 	}
 
-	// Restore quoted strings and redirections
-	restore := func(s string) string {
-		// Restore redirections
-		s = regexp.MustCompile(`__REDIR_(\d*)_(\d*)__`).ReplaceAllString(s, "${1}>&${2}")
-		s = strings.ReplaceAll(s, "__REDIR_AMPGT__", "&>")
-		// Restore quoted strings
-		for i, qs := range quotedStrings {
-			placeholder := "__QUOTED_" + string(rune('0'+i)) + "__"
-			s = strings.ReplaceAll(s, placeholder, qs)
-		}
-		return s
+	return segments
+}
+
+// extractCommands recursively extracts simple commands from a shell AST node.
+func extractCommands(node syntax.Command, printer *syntax.Printer, segments *[]string) {
+	if node == nil {
+		return
 	}
 
-	var result []string
-	for _, seg := range segments {
-		seg = strings.TrimSpace(restore(seg))
-		if seg != "" {
-			result = append(result, seg)
+	switch cmd := node.(type) {
+	case *syntax.CallExpr:
+		// Simple command (e.g., "ls -la")
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
+		}
+
+	case *syntax.BinaryCmd:
+		// Binary operators: &&, ||, |, &
+		extractCommands(cmd.X.Cmd, printer, segments)
+		extractCommands(cmd.Y.Cmd, printer, segments)
+
+	case *syntax.Subshell:
+		// Subshell: ( cmd )
+		for _, stmt := range cmd.Stmts {
+			extractCommands(stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.Block:
+		// Block: { cmd }
+		for _, stmt := range cmd.Stmts {
+			extractCommands(stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.IfClause:
+		// If statements: if cond; then body; elif...; else...; fi
+		// In v3, Else is a recursive *IfClause for elif/else chains
+		for clause := cmd; clause != nil; clause = clause.Else {
+			for _, stmt := range clause.Cond {
+				extractCommands(stmt.Cmd, printer, segments)
+			}
+			for _, stmt := range clause.Then {
+				extractCommands(stmt.Cmd, printer, segments)
+			}
+		}
+
+	case *syntax.WhileClause:
+		// While/until loops
+		for _, stmt := range cmd.Cond {
+			extractCommands(stmt.Cmd, printer, segments)
+		}
+		for _, stmt := range cmd.Do {
+			extractCommands(stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.ForClause:
+		// For loops
+		for _, stmt := range cmd.Do {
+			extractCommands(stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.CaseClause:
+		// Case statements
+		for _, item := range cmd.Items {
+			for _, stmt := range item.Stmts {
+				extractCommands(stmt.Cmd, printer, segments)
+			}
+		}
+
+	case *syntax.DeclClause:
+		// Declarations (export, local, declare, etc.)
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
+		}
+
+	case *syntax.LetClause:
+		// Let expressions
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
+		}
+
+	case *syntax.TimeClause:
+		// Time prefix
+		if cmd.Stmt != nil {
+			extractCommands(cmd.Stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.CoprocClause:
+		// Coprocess
+		if cmd.Stmt != nil {
+			extractCommands(cmd.Stmt.Cmd, printer, segments)
+		}
+
+	case *syntax.FuncDecl:
+		// Function declarations - extract the body
+		if cmd.Body != nil {
+			extractCommands(cmd.Body.Cmd, printer, segments)
+		}
+
+	case *syntax.ArithmCmd:
+		// Arithmetic commands (( expr ))
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
+		}
+
+	case *syntax.TestClause:
+		// Test expressions [[ expr ]]
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
+		}
+
+	default:
+		// For any other command type, print it as-is
+		var buf strings.Builder
+		printer.Print(&buf, cmd)
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			*segments = append(*segments, s)
 		}
 	}
-	return result
 }
 
 // stripWrappers strips safe wrapper prefixes, returns (core_cmd, list_of_wrappers)
