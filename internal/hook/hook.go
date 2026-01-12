@@ -7,11 +7,19 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/dgerlanc/mmi/patterns"
 	"mvdan.cc/sh/v3/syntax"
 )
+
+// Result contains the outcome of processing a command.
+type Result struct {
+	Command  string // The command that was processed
+	Approved bool   // Whether the command was approved
+	Reason   string // The reason for approval (empty if rejected)
+}
 
 // Input represents the JSON input from Claude Code
 type Input struct {
@@ -34,18 +42,33 @@ type SpecificOutput struct {
 // dangerousPattern matches command substitution syntax
 var dangerousPattern = regexp.MustCompile(`\$\(|` + "`")
 
+// currentProfile holds the current profile name for audit logging
+var currentProfile string
+
+// SetProfile sets the current profile name for audit logging.
+func SetProfile(profile string) {
+	currentProfile = profile
+}
+
 // Process reads from r and returns whether the command should be approved and the reason.
 // Returns false for parse errors, non-Bash tools, dangerous patterns, or unsafe commands.
 func Process(r io.Reader) (approved bool, reason string) {
+	result := ProcessWithResult(r)
+	return result.Approved, result.Reason
+}
+
+// ProcessWithResult reads from r and returns a Result with full details.
+// This is useful when the caller needs the original command for logging.
+func ProcessWithResult(r io.Reader) Result {
 	var input Input
 	if err := json.NewDecoder(r).Decode(&input); err != nil {
 		logger.Debug("failed to decode input", "error", err)
-		return false, ""
+		return Result{}
 	}
 
 	if input.ToolName != "Bash" {
 		logger.Debug("not a Bash command", "tool", input.ToolName)
-		return false, ""
+		return Result{}
 	}
 
 	cmd := input.ToolInput["command"]
@@ -54,7 +77,8 @@ func Process(r io.Reader) (approved bool, reason string) {
 	// Reject dangerous constructs
 	if dangerousPattern.MatchString(cmd) {
 		logger.Debug("rejected dangerous pattern", "command", cmd)
-		return false, ""
+		logAudit(cmd, false, "")
+		return Result{Command: cmd, Approved: false}
 	}
 
 	segments := SplitCommandChain(cmd)
@@ -74,7 +98,8 @@ func Process(r io.Reader) (approved bool, reason string) {
 		r := CheckSafe(coreCmd, cfg.SafeCommands)
 		if r == "" {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
-			return false, "" // One unsafe segment = reject entire command
+			logAudit(cmd, false, "")
+			return Result{Command: cmd, Approved: false}
 		}
 		logger.Debug("matched pattern", "command", coreCmd, "pattern", r)
 
@@ -85,9 +110,20 @@ func Process(r io.Reader) (approved bool, reason string) {
 		}
 	}
 
-	result := strings.Join(reasons, " | ")
-	logger.Debug("approved", "reason", result)
-	return true, result
+	reason := strings.Join(reasons, " | ")
+	logger.Debug("approved", "reason", reason)
+	logAudit(cmd, true, reason)
+	return Result{Command: cmd, Approved: true, Reason: reason}
+}
+
+// logAudit logs a command decision to the audit log.
+func logAudit(command string, approved bool, reason string) {
+	audit.Log(audit.Entry{
+		Command:  command,
+		Approved: approved,
+		Reason:   reason,
+		Profile:  currentProfile,
+	})
 }
 
 // FormatApproval returns the JSON approval output with a trailing newline

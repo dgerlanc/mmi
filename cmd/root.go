@@ -4,6 +4,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/spf13/cobra"
@@ -11,9 +12,10 @@ import (
 
 var (
 	// Global flags
-	verbose bool
-	dryRun  bool
-	profile string
+	verbose    bool
+	dryRun     bool
+	profile    string
+	noAuditLog bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -52,9 +54,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output (debug logging)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Test command approval without JSON output")
 	rootCmd.PersistentFlags().StringVar(&profile, "profile", "", "Config profile to use (or set MMI_PROFILE env var)")
+	rootCmd.PersistentFlags().BoolVar(&noAuditLog, "no-audit-log", false, "Disable audit logging")
 }
 
-// initApp initializes the application (logger, config)
+// initApp initializes the application (logger, config, audit)
 func initApp() {
 	// Check for profile from env var if not set via flag
 	if profile == "" {
@@ -66,6 +69,9 @@ func initApp() {
 
 	// Initialize config
 	config.Init()
+
+	// Initialize audit logging (unless disabled)
+	audit.Init("", noAuditLog)
 }
 
 // IsVerbose returns whether verbose mode is enabled
