@@ -79,3 +79,8 @@ fuzz time="30s":
 # Run a specific fuzz test
 fuzz-one target time="30s":
     go test -fuzz={{target}} -fuzztime={{time}} .
+
+# Test goreleaser configuration (dry run)
+release-test:
+    goreleaser check
+    goreleaser release --snapshot --clean

@@ -8,3 +8,6 @@ mmi
 coverage.out
 coverage.html
 bench.txt
+
+# GoReleaser artifacts
+dist/

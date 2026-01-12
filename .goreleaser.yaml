@@ -1,0 +1,86 @@
+# GoReleaser configuration for mmi
+# Docs: https://goreleaser.com
+version: 2
+
+project_name: mmi
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: mmi
+    main: .
+    binary: mmi
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: dgerlanc
+    name: mmi
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## MMI {{ .Version }}
+
+    Mother May I? - Claude Code Bash command approval hook
+  footer: |
+    **Full Changelog**: https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: mmi
+    repository:
+      owner: dgerlanc
+      name: homebrew-tap
+    homepage: https://github.com/dgerlanc/mmi
+    description: Claude Code Bash command approval hook
+    license: MIT
+    skip_upload: auto
+    install: |
+      bin.install "mmi"
+    test: |
+      system "#{bin}/mmi", "--help"
