@@ -10,7 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/dgerlanc/mmi/internal/logger"
-	"github.com/dgerlanc/mmi/patterns"
+	"github.com/dgerlanc/mmi/internal/patterns"
 )
 
 //go:embed config.toml
