@@ -2,60 +2,82 @@
 
 ## Code Quality & Structure
 
-1. **Extract pattern building into a separate package** - The pattern building functions (`buildSimplePattern`, `buildSubcommandPattern`, etc.) could be a separate `patterns` package for better modularity and testability.
+1. ~~**Extract pattern building into a separate package**~~ ✓ IMPLEMENTED - Pattern building functions are now in the `patterns` package.
 
-2. **Add structured logging** - Replace implicit error handling with structured logging (using `log/slog`) to help users debug why commands are rejected.
+2. ~~**Add structured logging**~~ ✓ IMPLEMENTED - Structured logging using `log/slog` is now available.
 
 3. ~~**Consider using a command parser library**~~ ✓ IMPLEMENTED - Replaced manual regex-based command chain splitting with `mvdan.cc/sh/v3` shell parser for more robust handling of quoted strings, redirections, and shell syntax.
 
 ## Security Enhancements
 
-4. **Add audit logging** - Log all approval/rejection decisions to a file for security auditing (`~/.local/share/mmi/audit.log`).
+4. ~~**Add audit logging**~~ ✓ IMPLEMENTED - Approval/rejection decisions are logged to `~/.local/share/mmi/audit.log`.
 
-5. **Support for command argument validation** - Currently only command names are validated. Adding argument pattern validation would prevent risky argument combinations (e.g., `rm -rf /`).
+5. **Support for command argument validation** - Currently, simple commands allow any arguments once the command name is approved. This feature would add argument-level pattern matching to prevent dangerous flag combinations. For example:
+   - Block `rm -rf /` or `rm -rf ~` while still allowing `rm file.txt`
+   - Block `chmod 777` while allowing `chmod 644`
+   - Block `curl | sh` patterns that pipe untrusted scripts to shell
+   - Require certain flags (e.g., only allow `grep` with `--include` to limit scope)
 
-6. **Add a deny list** - Support explicit denials that override approvals for dangerous patterns.
+   Implementation could use a new config section like:
+   ```toml
+   [[allow.validated]]
+   name = "safe-rm"
+   command = "rm"
+   allowed_args = ["-r", "-f", "-i", "-v"]
+   blocked_patterns = ["-rf /", "-rf ~", "-rf $HOME"]
+   ```
+
+6. ~~**Add a deny list**~~ ✓ IMPLEMENTED - Deny list support is available for explicit denials that override approvals.
 
 ## Feature Additions
 
-7. **Dry-run mode** - Add `--dry-run` flag to test what commands would be approved without actually hooking into Claude Code.
+7. ~~**Dry-run mode**~~ ✓ IMPLEMENTED - Use `--dry-run` flag to test command approval without JSON output.
 
-8. **Verbose mode** - Add `--verbose` or `-v` flag to explain why a command was approved/rejected (useful for debugging configuration).
+8. ~~**Verbose mode**~~ ✓ IMPLEMENTED - Use `--verbose` or `-v` flag to enable debug logging.
 
-9. **Config validation command** - Add `mmi validate` to check config syntax and show compiled patterns.
+9. ~~**Config validation command**~~ ✓ IMPLEMENTED - Use `mmi validate` to check config syntax and show compiled patterns.
 
-10. **Interactive config generator** - Add `mmi init` to create a starter config interactively.
+10. ~~**Interactive config generator**~~ ✓ IMPLEMENTED - Use `mmi init` to create a starter config interactively.
 
 ## Testing Improvements
 
-11. **Add fuzzing tests** - Use Go's built-in fuzzing to find edge cases in command parsing.
+11. ~~**Add fuzzing tests**~~ ✓ IMPLEMENTED - Fuzzing tests are available using Go's built-in fuzzing.
 
-12. **Add benchmarks** - Benchmark the regex compilation and matching for performance analysis.
+12. ~~**Add benchmarks**~~ ✓ IMPLEMENTED - Benchmarks are available for regex compilation and matching.
 
-13. **Generate coverage report as HTML** - Extend justfile to output `go test -coverprofile=coverage.out && go tool cover -html=coverage.out`.
+13. ~~**Generate coverage report as HTML**~~ ✓ IMPLEMENTED - HTML coverage report available via justfile recipe.
 
 ## Documentation
 
-14. **Add examples directory** - Include example configurations for different use cases (Python-only, Node-only, minimal, etc.).
+14. ~~**Add examples directory**~~ ✓ IMPLEMENTED - Example configurations for different use cases are available in the `examples/` directory.
 
-15. **Document regex pattern syntax** - The config format supports regex but there's no documentation on how to write custom patterns.
+15. ~~**Document regex pattern syntax**~~ ✓ IMPLEMENTED - Pattern syntax documentation is available in `docs/PATTERNS.md`.
 
-16. **Add CHANGELOG.md** - Track version history and breaking changes.
+16. ~~**Add CHANGELOG.md**~~ ✓ IMPLEMENTED - Version history is tracked in `CHANGELOG.md`.
 
 ## Configuration
 
-17. **Support config includes** - Allow splitting config into multiple files (`include = ["git.toml", "python.toml"]`).
+17. ~~**Support config includes**~~ ✓ IMPLEMENTED - Config can be split into multiple files using includes.
 
-18. **Add config profiles** - Support multiple named profiles switchable via environment variable.
+18. ~~**Add config profiles**~~ ✓ IMPLEMENTED - Multiple named profiles are supported and switchable via environment variable.
 
-19. **Config schema validation** - Add JSON Schema or similar for IDE autocompletion in config files.
+19. **Config schema validation** - Create a JSON Schema (or TOML equivalent) that describes the config file structure. This enables:
+   - **IDE autocompletion**: Editors like VS Code can suggest valid keys and values as you type
+   - **Inline documentation**: Hover over config keys to see descriptions and valid options
+   - **Error highlighting**: Catch typos and invalid config before running `mmi validate`
+   - **Type checking**: Ensure arrays contain the right types, required fields are present, etc.
+
+   Implementation would involve:
+   1. Creating a JSON Schema file (e.g., `schema/mmi-config.schema.json`)
+   2. Adding a `$schema` directive to example configs
+   3. Optionally publishing the schema to [SchemaStore](https://www.schemastore.org/) for automatic IDE detection
 
 ## Build & Distribution
 
-20. **Add GitHub Actions CI** - Automate testing, linting, and releases.
+20. ~~**Add GitHub Actions CI**~~ ✓ IMPLEMENTED - GitHub Actions workflow automates testing, linting, and releases.
 
-21. **Create releases with goreleaser** - Automatically build binaries for multiple platforms.
+21. ~~**Create releases with goreleaser**~~ ✓ IMPLEMENTED - GoReleaser configuration is available in `.goreleaser.yaml`.
 
 22. **Add Homebrew formula** - Make installation easier on macOS.
 
-23. **Add shell completions** - Generate bash/zsh/fish completions for any CLI subcommands.
+23. ~~**Add shell completions**~~ ✓ IMPLEMENTED - Shell completions are available via `mmi completion` command.
