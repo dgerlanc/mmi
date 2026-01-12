@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -121,5 +122,194 @@ func TestSetProfile(t *testing.T) {
 	Reset()
 	if GetProfile() != "" {
 		t.Errorf("expected profile to be empty after reset, got %q", GetProfile())
+	}
+}
+
+// Validation tests
+
+func TestValidateSimpleCommandsMissing(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "empty"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing commands field")
+	}
+	if !strings.Contains(err.Error(), "commands.simple[0]") {
+		t.Errorf("error should reference commands.simple[0], got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "\"commands\" field is required") {
+		t.Errorf("error should mention commands field, got: %v", err)
+	}
+}
+
+func TestValidateSimpleCommandsEmpty(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "empty"
+commands = []
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for empty commands array")
+	}
+}
+
+func TestValidateCommandMissing(t *testing.T) {
+	data := []byte(`
+[[wrappers.command]]
+flags = ["-n <arg>"]
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing command field")
+	}
+	if !strings.Contains(err.Error(), "wrappers.command[0]") {
+		t.Errorf("error should reference wrappers.command[0], got: %v", err)
+	}
+}
+
+func TestValidateCommandEmpty(t *testing.T) {
+	data := []byte(`
+[[wrappers.command]]
+command = ""
+flags = ["-n <arg>"]
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for empty command field")
+	}
+}
+
+func TestValidateSubcommandCommandMissing(t *testing.T) {
+	data := []byte(`
+[[commands.subcommand]]
+subcommands = ["diff", "log"]
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing command field")
+	}
+	if !strings.Contains(err.Error(), "commands.subcommand[0]") {
+		t.Errorf("error should reference commands.subcommand[0], got: %v", err)
+	}
+}
+
+func TestValidateSubcommandSubcommandsMissing(t *testing.T) {
+	data := []byte(`
+[[commands.subcommand]]
+command = "git"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing subcommands field")
+	}
+	if !strings.Contains(err.Error(), `"git"`) {
+		t.Errorf("error should include command name, got: %v", err)
+	}
+}
+
+func TestValidateSubcommandSubcommandsEmpty(t *testing.T) {
+	data := []byte(`
+[[commands.subcommand]]
+command = "git"
+subcommands = []
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for empty subcommands array")
+	}
+}
+
+func TestValidateRegexPatternMissing(t *testing.T) {
+	data := []byte(`
+[[commands.regex]]
+name = "empty pattern"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing pattern field")
+	}
+	if !strings.Contains(err.Error(), "commands.regex[0]") {
+		t.Errorf("error should reference commands.regex[0], got: %v", err)
+	}
+}
+
+func TestValidateRegexPatternEmpty(t *testing.T) {
+	data := []byte(`
+[[commands.regex]]
+pattern = ""
+name = "empty pattern"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for empty pattern field")
+	}
+}
+
+func TestValidateDenySimpleCommandsMissing(t *testing.T) {
+	data := []byte(`
+[[deny.simple]]
+name = "dangerous"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing commands in deny.simple")
+	}
+	if !strings.Contains(err.Error(), "deny.simple[0]") {
+		t.Errorf("error should reference deny.simple[0], got: %v", err)
+	}
+}
+
+func TestValidateDenyRegexPatternMissing(t *testing.T) {
+	data := []byte(`
+[[deny.regex]]
+name = "dangerous"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing pattern in deny.regex")
+	}
+	if !strings.Contains(err.Error(), "deny.regex[0]") {
+		t.Errorf("error should reference deny.regex[0], got: %v", err)
+	}
+}
+
+func TestValidationErrorIncludesName(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "my custom name"
+commands = []
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error")
+	}
+	if !strings.Contains(err.Error(), "my custom name") {
+		t.Errorf("error should include the name field value, got: %v", err)
+	}
+}
+
+func TestValidationErrorCorrectIndex(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "valid"
+commands = ["ls"]
+
+[[commands.simple]]
+name = "also valid"
+commands = ["cat"]
+
+[[commands.simple]]
+name = "invalid entry"
+commands = []
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error")
+	}
+	if !strings.Contains(err.Error(), "commands.simple[2]") {
+		t.Errorf("error should reference commands.simple[2], got: %v", err)
 	}
 }
