@@ -40,7 +40,7 @@ name = "write to disk"
 
 [[deny.regex]]
 pattern = 'mkfs\.'
-name = "create filesystem"
+name = "format filesystem"
 
 # ============================================================
 # WRAPPERS - prefixes stripped before checking the core command
@@ -52,88 +52,53 @@ commands = ["env", "do"]
 
 [[wrappers.command]]
 command = "timeout"
-flags = ["<arg>"]  # timeout 30 cmd
+flags = ["<arg>"]
 
 [[wrappers.command]]
 command = "nice"
-flags = ["-n <arg>", ""]  # nice -n 10 cmd, or just "nice cmd"
+flags = ["-n <arg>", ""]
 
 [[wrappers.regex]]
 pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
 name = "env vars"
 
-# Virtual env paths: .venv/bin/, ../.venv/bin/, venv/bin/
-[[wrappers.regex]]
-pattern = '^(\.\./)*\.?venv/bin/'
-name = ".venv"
-
-# Absolute path to venv: /abs/path/.venv/bin/
-[[wrappers.regex]]
-pattern = '^/[^\s]+/\.?venv/bin/'
-name = ".venv"
-
 # ============================================================
 # COMMANDS - safe commands that are allowed to execute
 # ============================================================
 
-[[commands.simple]]
-name = "simple"
-commands = ["pytest", "python", "ruff", "npx", "make", "touch", "echo", "uvx", "sleep"]
 
 [[commands.simple]]
-name = "read-only"
-commands = ["ls", "cat", "head", "tail", "wc", "find", "grep", "rg", "file", "which", "pwd", "du", "df", "curl", "sort", "uniq", "cut", "tr", "awk", "sed", "xargs"]
+name = "unix-and-shell"
+commands = ['awk', 'cat', 'cd', 'curl', 'cut', 'df', 'du', 'echo', 'file', 'find', 'grep',
+            'head', 'ls', 'make', 'pwd', 'rg', 'sed', 'sleep', 'sort', 'tail', 'touch',
+            'tr', 'uniq', 'wc', 'which', 'xargs']
 
-[[commands.simple]]
-name = "process-mgmt"
-commands = ["pkill", "kill"]
+# [[commands.simple]]
+# name = "process-mgmt"
+# commands = ["pkill", "kill"]
 
-[[commands.simple]]
-name = "loops"
-commands = ["done"]
+# [[commands.simple]]
+# name = "python"
+# commands = ['pytest', 'python', 'ruff', 'uvx']
 
-[[commands.subcommand]]
-command = "git"
-subcommands = ["diff", "log", "status", "show", "branch", "stash", "bisect", "fetch", "add", "checkout", "merge", "rebase", "worktree"]
-flags = ["-C <arg>"]
+# [[commands.subcommand]]
+# command = "uv"
+# subcommands = ["pip", "run", "sync", "venv", "add", "remove", "lock"]
 
-[[commands.subcommand]]
-command = "npm"
-subcommands = ["install", "run", "test", "build", "ci"]
-
-[[commands.subcommand]]
-command = "cargo"
-subcommands = ["build", "test", "run", "check", "clippy", "fmt", "clean"]
-
-[[commands.subcommand]]
-command = "uv"
-subcommands = ["pip", "run", "sync", "venv", "add", "remove", "lock"]
-
-[[commands.subcommand]]
-command = "maturin"
-subcommands = ["develop", "build"]
 
 # Shell builtins for control flow
 [[commands.regex]]
 pattern = '^(true|false|exit(\s+\d+)?)$'
 name = "shell builtin"
 
-# source/. for venv activation
-[[commands.regex]]
-pattern = '^(source|\.) [^\s]*venv/bin/activate'
-name = "venv activate"
-
-# Variable assignment (VAR=value)
 [[commands.regex]]
 pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
 name = "var assignment"
 
-# for loop
 [[commands.regex]]
 pattern = '^for\s+\w+\s+in\s'
 name = "for loop"
 
-# while loop
 [[commands.regex]]
 pattern = '^while\s'
 name = "while loop"
