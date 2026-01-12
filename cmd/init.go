@@ -11,9 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	initForce bool
-)
+var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init",

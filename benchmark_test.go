@@ -31,8 +31,8 @@ func BenchmarkSplitCommandChain(b *testing.B) {
 
 // BenchmarkProcess benchmarks the full command approval process
 func BenchmarkProcess(b *testing.B) {
-	cfg := config.Get()
-	_ = cfg // ensure config is loaded before benchmark
+	// Ensure config is loaded before benchmark
+	_ = config.Get()
 
 	benchmarks := []struct {
 		name  string
