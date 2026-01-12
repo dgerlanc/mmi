@@ -1,0 +1,66 @@
+# Strict MMI configuration
+# Only allows read-only commands - suitable for CI or paranoid mode
+
+# Deny everything dangerous
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo", "su", "doas"]
+
+[[deny.regex]]
+pattern = 'rm\s+'
+name = "rm"
+
+[[deny.regex]]
+pattern = 'chmod\s+'
+name = "chmod"
+
+[[deny.regex]]
+pattern = 'chown\s+'
+name = "chown"
+
+[[deny.regex]]
+pattern = 'mv\s+'
+name = "mv"
+
+[[deny.regex]]
+pattern = 'cp\s+'
+name = "cp"
+
+[[deny.regex]]
+pattern = 'mkdir\s+'
+name = "mkdir"
+
+[[deny.regex]]
+pattern = 'touch\s+'
+name = "touch"
+
+[[deny.regex]]
+pattern = '>\s*'
+name = "redirect"
+
+[[deny.regex]]
+pattern = 'curl\s+'
+name = "curl"
+
+[[deny.regex]]
+pattern = 'wget\s+'
+name = "wget"
+
+# Only allow truly read-only commands
+[[commands.simple]]
+name = "read-only"
+commands = ["ls", "cat", "head", "tail", "wc", "file", "which", "pwd", "echo"]
+
+# Git read-only only
+[[commands.subcommand]]
+command = "git"
+subcommands = ["status", "log", "diff", "show", "branch"]
+
+# Shell builtins
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+[[commands.regex]]
+pattern = '^cd\s'
+name = "cd"

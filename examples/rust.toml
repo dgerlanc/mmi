@@ -1,0 +1,69 @@
+# Rust development MMI configuration
+
+# Deny dangerous commands
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo", "su", "doas"]
+
+[[deny.regex]]
+pattern = 'rm\s+(-[rRfF]+\s+)*/'
+name = "rm root"
+
+# Wrappers
+[[wrappers.simple]]
+name = "env"
+commands = ["env"]
+
+[[wrappers.command]]
+command = "timeout"
+flags = ["<arg>"]
+
+[[wrappers.regex]]
+pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+name = "env vars"
+
+# Rust tools
+[[commands.subcommand]]
+command = "cargo"
+subcommands = ["build", "test", "run", "check", "clippy", "fmt", "clean", "doc", "publish", "bench", "new", "init", "add", "remove", "update"]
+
+[[commands.subcommand]]
+command = "rustup"
+subcommands = ["update", "show", "target", "component"]
+
+[[commands.subcommand]]
+command = "maturin"
+subcommands = ["develop", "build", "publish"]
+
+[[commands.simple]]
+name = "rust"
+commands = ["rustc", "rustfmt", "cargo-watch"]
+
+# Git
+[[commands.subcommand]]
+command = "git"
+subcommands = ["diff", "log", "status", "show", "branch", "stash", "fetch", "add", "checkout", "merge", "rebase", "commit"]
+flags = ["-C <arg>"]
+
+# Read-only utilities
+[[commands.simple]]
+name = "read-only"
+commands = ["ls", "cat", "head", "tail", "grep", "find", "wc", "file", "which", "pwd"]
+
+# Common utilities
+[[commands.simple]]
+name = "common"
+commands = ["make", "touch", "echo", "sleep"]
+
+# Shell builtins
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+[[commands.regex]]
+pattern = '^cd\s'
+name = "cd"
+
+[[commands.regex]]
+pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
+name = "var assignment"

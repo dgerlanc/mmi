@@ -1,0 +1,31 @@
+# Minimal MMI configuration
+# A bare-bones config for security-conscious users
+
+# Deny dangerous commands
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo", "su", "doas"]
+
+# Essential wrappers
+[[wrappers.regex]]
+pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+name = "env vars"
+
+# Only allow the most basic read-only commands
+[[commands.simple]]
+name = "read-only"
+commands = ["ls", "cat", "pwd", "echo"]
+
+# Git read-only operations
+[[commands.subcommand]]
+command = "git"
+subcommands = ["status", "log", "diff", "show", "branch"]
+
+# Shell builtins
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+[[commands.regex]]
+pattern = '^cd\s'
+name = "cd"

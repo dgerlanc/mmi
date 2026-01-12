@@ -1,0 +1,73 @@
+# Node.js/JavaScript development MMI configuration
+
+# Deny dangerous commands
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo", "su", "doas"]
+
+[[deny.regex]]
+pattern = 'rm\s+(-[rRfF]+\s+)*/'
+name = "rm root"
+
+# Wrappers
+[[wrappers.simple]]
+name = "env"
+commands = ["env"]
+
+[[wrappers.command]]
+command = "timeout"
+flags = ["<arg>"]
+
+[[wrappers.regex]]
+pattern = '^([A-Z_][A-Z0-9_]*=[^\s]*\s+)+'
+name = "env vars"
+
+# Node.js tools
+[[commands.simple]]
+name = "node"
+commands = ["node", "npx", "tsx", "ts-node", "eslint", "prettier", "tsc"]
+
+[[commands.subcommand]]
+command = "npm"
+subcommands = ["install", "run", "test", "build", "ci", "start", "init", "publish", "pack"]
+
+[[commands.subcommand]]
+command = "yarn"
+subcommands = ["install", "run", "test", "build", "start", "add", "remove"]
+
+[[commands.subcommand]]
+command = "pnpm"
+subcommands = ["install", "run", "test", "build", "start", "add", "remove"]
+
+[[commands.subcommand]]
+command = "bun"
+subcommands = ["install", "run", "test", "build", "start", "add", "remove"]
+
+# Git
+[[commands.subcommand]]
+command = "git"
+subcommands = ["diff", "log", "status", "show", "branch", "stash", "fetch", "add", "checkout", "merge", "rebase", "commit"]
+flags = ["-C <arg>"]
+
+# Read-only utilities
+[[commands.simple]]
+name = "read-only"
+commands = ["ls", "cat", "head", "tail", "grep", "find", "wc", "file", "which", "pwd"]
+
+# Common utilities
+[[commands.simple]]
+name = "common"
+commands = ["make", "touch", "echo", "sleep"]
+
+# Shell builtins
+[[commands.regex]]
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
+
+[[commands.regex]]
+pattern = '^cd\s'
+name = "cd"
+
+[[commands.regex]]
+pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
+name = "var assignment"
