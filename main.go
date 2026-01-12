@@ -201,7 +201,7 @@ func buildWrapperPattern(cmd string, flags []string) string {
 // isWrapper indicates if this is a wrapper section (affects pattern generation).
 //
 // Section types:
-//   - simple: [*.simple] commands = ["cmd1", "cmd2"] - any arguments allowed
+//   - simple: [[*.simple]] name = "label", commands = [...] - any arguments allowed
 //   - command: [[*.command]] command = "cmd", flags = [...] - wrapper with flags
 //   - subcommand: [[*.subcommand]] command = "cmd", subcommands = [...], flags = [...]
 //   - regex: [[*.regex]] pattern = "^regex$", name = "desc" - raw regex
@@ -211,27 +211,27 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 	for sectionType, value := range sectionData {
 		switch sectionType {
 		case "simple":
-			// [*.simple] commands = ["cmd1", "cmd2"]
-			sectionMap, ok := value.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			cmds := toStringSlice(sectionMap["commands"])
-			for _, cmd := range cmds {
-				var pattern string
-				var patternName string
-				if isWrapper {
-					pattern = buildWrapperPattern(cmd, nil)
-					patternName = cmd
-				} else {
-					pattern = buildSimplePattern(cmd)
-					patternName = "simple"
+			// [[*.simple]] name = "label", commands = [...]
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				name, _ := entry["name"].(string)
+				cmds := toStringSlice(entry["commands"])
+				for _, cmd := range cmds {
+					var pattern string
+					var patternName string
+					if isWrapper {
+						pattern = buildWrapperPattern(cmd, nil)
+						patternName = cmd // For wrappers, use command name
+					} else {
+						pattern = buildSimplePattern(cmd)
+						patternName = name // For commands, use the label
+					}
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
+					}
+					patterns = append(patterns, Pattern{Regex: re, Name: patternName})
 				}
-				re, err := regexp.Compile(pattern)
-				if err != nil {
-					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
-				}
-				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
 			}
 
 		case "command":
@@ -286,24 +286,6 @@ func parseSection(sectionData map[string]interface{}, isWrapper bool) ([]Pattern
 					return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
 				}
 				patterns = append(patterns, Pattern{Regex: re, Name: patternName})
-			}
-
-		default:
-			// Named sections like [commands.read-only] commands = [...]
-			sectionMap, ok := value.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if cmdsRaw, ok := sectionMap["commands"]; ok {
-				cmds := toStringSlice(cmdsRaw)
-				for _, cmd := range cmds {
-					pattern := buildSimplePattern(cmd)
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
-					}
-					patterns = append(patterns, Pattern{Regex: re, Name: sectionType})
-				}
 			}
 		}
 	}

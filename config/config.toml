@@ -5,7 +5,7 @@
 #   [commands.*] - safe commands that are allowed to execute
 #
 # Section types:
-#   [*.simple]       - commands = ["cmd1", "cmd2"] - any arguments allowed
+#   [[*.simple]]     - name = "label", commands = [...] - any arguments allowed
 #   [[*.command]]    - command = "cmd", flags = [...] - wrapper with flags
 #   [[*.subcommand]] - command = "cmd", subcommands = [...], flags = [...]
 #   [[*.regex]]      - pattern = "^regex$", name = "desc" - raw regex escape hatch
@@ -14,7 +14,8 @@
 # WRAPPERS - prefixes stripped before checking the core command
 # ============================================================
 
-[wrappers.simple]
+[[wrappers.simple]]
+name = "env"
 commands = ["env", "do"]
 
 [[wrappers.command]]
@@ -43,16 +44,20 @@ name = ".venv"
 # COMMANDS - safe commands that are allowed to execute
 # ============================================================
 
-[commands.simple]
+[[commands.simple]]
+name = "simple"
 commands = ["pytest", "python", "ruff", "npx", "make", "touch", "echo", "uvx", "sleep"]
 
-[commands.read-only]
+[[commands.simple]]
+name = "read-only"
 commands = ["ls", "cat", "head", "tail", "wc", "find", "grep", "rg", "file", "which", "pwd", "du", "df", "curl", "sort", "uniq", "cut", "tr", "awk", "sed", "xargs"]
 
-[commands.process-mgmt]
+[[commands.simple]]
+name = "process-mgmt"
 commands = ["pkill", "kill"]
 
-[commands.loops]
+[[commands.simple]]
+name = "loops"
 commands = ["done"]
 
 [[commands.subcommand]]

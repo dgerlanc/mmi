@@ -440,7 +440,8 @@ func TestEnsureConfigFiles(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	t.Run("simple commands", func(t *testing.T) {
 		tomlData := []byte(`
-[commands.simple]
+[[commands.simple]]
+name = "test"
 commands = ["pytest", "python"]
 `)
 		_, commands, err := loadConfig(tomlData)
@@ -489,7 +490,8 @@ name = "test"
 command = "timeout"
 flags = ["<arg>"]
 
-[wrappers.simple]
+[[wrappers.simple]]
+name = "env"
 commands = ["env"]
 `)
 		wrappers, _, err := loadConfig(tomlData)
