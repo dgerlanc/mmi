@@ -19,6 +19,12 @@ coverage-report:
     go test -v -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out
 
+# Generate HTML coverage report
+coverage-html:
+    go test -coverprofile=coverage.out ./...
+    go tool cover -html=coverage.out -o coverage.html
+    @echo "Coverage report written to coverage.html"
+
 # Run tests with verbose output and coverage
 test-coverage:
     go test -v -cover
