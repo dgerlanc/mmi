@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dgerlanc/mmi/internal/config"
+	"github.com/dgerlanc/mmi/internal/hook"
 	"github.com/dgerlanc/mmi/patterns"
 )
 
@@ -24,81 +26,13 @@ func TestMain(m *testing.M) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Unsetenv("MMI_CONFIG")
 
-	initConfig()
+	config.Init()
 	os.Exit(m.Run())
 }
 
 // =============================================================================
 // Core Logic Tests
 // =============================================================================
-
-func TestMainFunction(t *testing.T) {
-	origStdin := os.Stdin
-	origExit := osExit
-	defer func() {
-		os.Stdin = origStdin
-		osExit = origExit
-	}()
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Failed to create pipe: %v", err)
-	}
-
-	go func() {
-		w.WriteString(`{"tool_name":"Bash","tool_input":{"command":"git status"}}`)
-		w.Close()
-	}()
-
-	os.Stdin = r
-
-	var exitCode int
-	osExit = func(code int) { exitCode = code }
-
-	main()
-
-	if exitCode != 0 {
-		t.Errorf("main() exitCode = %d, want 0", exitCode)
-	}
-}
-
-func TestRun(t *testing.T) {
-	tests := []struct {
-		name         string
-		input        string
-		expectOutput bool
-	}{
-		{"safe command", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, true},
-		{"unsafe command", `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`, false},
-		{"non-Bash tool", `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`, false},
-		{"invalid JSON", "invalid json", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var stdout bytes.Buffer
-			exitCode := run(strings.NewReader(tt.input), &stdout)
-
-			if exitCode != 0 {
-				t.Errorf("run() exitCode = %d, want 0", exitCode)
-			}
-
-			if tt.expectOutput {
-				if stdout.Len() == 0 {
-					t.Error("run() expected output, got none")
-				}
-				var output HookOutput
-				if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
-					t.Errorf("run() output is not valid JSON: %v", err)
-				}
-			} else {
-				if stdout.Len() != 0 {
-					t.Errorf("run() expected no output, got %q", stdout.String())
-				}
-			}
-		})
-	}
-}
 
 func TestProcess(t *testing.T) {
 	tests := []struct {
@@ -129,27 +63,27 @@ func TestProcess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			approved, reason := process(strings.NewReader(tt.input))
+			approved, reason := hook.Process(strings.NewReader(tt.input))
 			if approved != tt.expectApproved {
-				t.Errorf("process() approved = %v, want %v", approved, tt.expectApproved)
+				t.Errorf("Process() approved = %v, want %v", approved, tt.expectApproved)
 			}
 			if reason != tt.expectReason {
-				t.Errorf("process() reason = %q, want %q", reason, tt.expectReason)
+				t.Errorf("Process() reason = %q, want %q", reason, tt.expectReason)
 			}
 		})
 	}
 }
 
 func TestFormatApproval(t *testing.T) {
-	result := formatApproval("test reason")
+	result := hook.FormatApproval("test reason")
 
 	if !strings.HasSuffix(result, "\n") {
-		t.Error("formatApproval() should end with newline")
+		t.Error("FormatApproval() should end with newline")
 	}
 
-	var output HookOutput
+	var output hook.Output
 	if err := json.Unmarshal([]byte(strings.TrimSuffix(result, "\n")), &output); err != nil {
-		t.Errorf("formatApproval() returned invalid JSON: %v", err)
+		t.Errorf("FormatApproval() returned invalid JSON: %v", err)
 		return
 	}
 
@@ -181,15 +115,17 @@ func TestSplitCommandChain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := splitCommandChain(tt.input)
+			got := hook.SplitCommandChain(tt.input)
 			if !reflect.DeepEqual(got, tt.expected) {
-				t.Errorf("splitCommandChain(%q) = %v, want %v", tt.input, got, tt.expected)
+				t.Errorf("SplitCommandChain(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestStripWrappers(t *testing.T) {
+	cfg := config.Get()
+
 	tests := []struct {
 		name             string
 		input            string
@@ -210,22 +146,24 @@ func TestStripWrappers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotCore, gotWrappers := stripWrappers(tt.input)
+			gotCore, gotWrappers := hook.StripWrappers(tt.input, cfg.WrapperPatterns)
 			if gotCore != tt.expectedCore {
-				t.Errorf("stripWrappers(%q) core = %q, want %q", tt.input, gotCore, tt.expectedCore)
+				t.Errorf("StripWrappers(%q) core = %q, want %q", tt.input, gotCore, tt.expectedCore)
 			}
 			if !reflect.DeepEqual(gotWrappers, tt.expectedWrappers) {
-				t.Errorf("stripWrappers(%q) wrappers = %v, want %v", tt.input, gotWrappers, tt.expectedWrappers)
+				t.Errorf("StripWrappers(%q) wrappers = %v, want %v", tt.input, gotWrappers, tt.expectedWrappers)
 			}
 		})
 	}
 }
 
 // =============================================================================
-// checkSafe() Tests - One representative per config section type
+// CheckSafe() Tests - One representative per config section type
 // =============================================================================
 
 func TestCheckSafe(t *testing.T) {
+	cfg := config.Get()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -256,15 +194,17 @@ func TestCheckSafe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := checkSafe(tt.input)
+			got := hook.CheckSafe(tt.input, cfg.SafeCommands)
 			if got != tt.expected {
-				t.Errorf("checkSafe(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("CheckSafe(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestCheckSafeUnsafe(t *testing.T) {
+	cfg := config.Get()
+
 	unsafeCommands := []string{
 		"rm -rf /",
 		"sudo anything",
@@ -278,8 +218,8 @@ func TestCheckSafeUnsafe(t *testing.T) {
 
 	for _, cmd := range unsafeCommands {
 		t.Run(cmd, func(t *testing.T) {
-			if got := checkSafe(cmd); got != "" {
-				t.Errorf("checkSafe(%q) = %q, want empty (unsafe)", cmd, got)
+			if got := hook.CheckSafe(cmd, cfg.SafeCommands); got != "" {
+				t.Errorf("CheckSafe(%q) = %q, want empty (unsafe)", cmd, got)
 			}
 		})
 	}
@@ -326,7 +266,7 @@ func TestIntegration(t *testing.T) {
 			t.Error("Expected approval output")
 		}
 
-		var result HookOutput
+		var result hook.Output
 		if err := json.Unmarshal([]byte(output), &result); err != nil {
 			t.Errorf("Failed to parse output: %v", err)
 		}
@@ -365,20 +305,6 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
-func TestDangerousPatterns(t *testing.T) {
-	dangerous := []string{
-		`echo "$(whoami)"`,
-		"echo '$(whoami)'",
-		"echo \"`whoami`\"",
-	}
-
-	for _, cmd := range dangerous {
-		if !dangerousPattern.MatchString(cmd) {
-			t.Errorf("Expected dangerous pattern to match %q", cmd)
-		}
-	}
-}
-
 // =============================================================================
 // Config Tests
 // =============================================================================
@@ -389,12 +315,12 @@ func TestGetConfigDir(t *testing.T) {
 		defer os.Setenv("MMI_CONFIG", origVal)
 
 		os.Setenv("MMI_CONFIG", "/custom/path")
-		dir, err := getConfigDir()
+		dir, err := config.GetConfigDir()
 		if err != nil {
-			t.Errorf("getConfigDir() error = %v", err)
+			t.Errorf("GetConfigDir() error = %v", err)
 		}
 		if dir != "/custom/path" {
-			t.Errorf("getConfigDir() = %q, want /custom/path", dir)
+			t.Errorf("GetConfigDir() = %q, want /custom/path", dir)
 		}
 	})
 
@@ -403,14 +329,14 @@ func TestGetConfigDir(t *testing.T) {
 		defer os.Setenv("MMI_CONFIG", origVal)
 
 		os.Unsetenv("MMI_CONFIG")
-		dir, err := getConfigDir()
+		dir, err := config.GetConfigDir()
 		if err != nil {
-			t.Errorf("getConfigDir() error = %v", err)
+			t.Errorf("GetConfigDir() error = %v", err)
 		}
 		home, _ := os.UserHomeDir()
 		expected := filepath.Join(home, ".config", "mmi")
 		if dir != expected {
-			t.Errorf("getConfigDir() = %q, want %q", dir, expected)
+			t.Errorf("GetConfigDir() = %q, want %q", dir, expected)
 		}
 	})
 }
@@ -423,8 +349,8 @@ func TestEnsureConfigFiles(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	configDir := filepath.Join(tmpDir, "config")
-	if err := ensureConfigFiles(configDir); err != nil {
-		t.Errorf("ensureConfigFiles() error = %v", err)
+	if err := config.EnsureConfigFiles(configDir); err != nil {
+		t.Errorf("EnsureConfigFiles() error = %v", err)
 	}
 
 	configPath := filepath.Join(configDir, "config.toml")
@@ -434,10 +360,10 @@ func TestEnsureConfigFiles(t *testing.T) {
 
 	// Second call should not overwrite
 	originalContent, _ := os.ReadFile(configPath)
-	ensureConfigFiles(configDir)
+	config.EnsureConfigFiles(configDir)
 	newContent, _ := os.ReadFile(configPath)
 	if !bytes.Equal(originalContent, newContent) {
-		t.Error("ensureConfigFiles() overwrote existing file")
+		t.Error("EnsureConfigFiles() overwrote existing file")
 	}
 }
 
@@ -448,12 +374,12 @@ func TestLoadConfig(t *testing.T) {
 name = "test"
 commands = ["pytest", "python"]
 `)
-		_, commands, err := loadConfig(tomlData)
+		cfg, err := config.LoadConfig(tomlData)
 		if err != nil {
-			t.Errorf("loadConfig() error = %v", err)
+			t.Errorf("LoadConfig() error = %v", err)
 		}
-		if len(commands) != 2 {
-			t.Errorf("loadConfig() returned %d commands, want 2", len(commands))
+		if len(cfg.SafeCommands) != 2 {
+			t.Errorf("LoadConfig() returned %d commands, want 2", len(cfg.SafeCommands))
 		}
 	})
 
@@ -464,12 +390,12 @@ command = "git"
 subcommands = ["diff", "log"]
 flags = ["-C <arg>"]
 `)
-		_, commands, err := loadConfig(tomlData)
+		cfg, err := config.LoadConfig(tomlData)
 		if err != nil {
-			t.Errorf("loadConfig() error = %v", err)
+			t.Errorf("LoadConfig() error = %v", err)
 		}
-		if len(commands) != 1 {
-			t.Errorf("loadConfig() returned %d commands, want 1", len(commands))
+		if len(cfg.SafeCommands) != 1 {
+			t.Errorf("LoadConfig() returned %d commands, want 1", len(cfg.SafeCommands))
 		}
 	})
 
@@ -479,12 +405,12 @@ flags = ["-C <arg>"]
 pattern = "^test\\b"
 name = "test"
 `)
-		_, commands, err := loadConfig(tomlData)
+		cfg, err := config.LoadConfig(tomlData)
 		if err != nil {
-			t.Errorf("loadConfig() error = %v", err)
+			t.Errorf("LoadConfig() error = %v", err)
 		}
-		if len(commands) != 1 {
-			t.Errorf("loadConfig() returned %d commands, want 1", len(commands))
+		if len(cfg.SafeCommands) != 1 {
+			t.Errorf("LoadConfig() returned %d commands, want 1", len(cfg.SafeCommands))
 		}
 	})
 
@@ -498,12 +424,12 @@ flags = ["<arg>"]
 name = "env"
 commands = ["env"]
 `)
-		wrappers, _, err := loadConfig(tomlData)
+		cfg, err := config.LoadConfig(tomlData)
 		if err != nil {
-			t.Errorf("loadConfig() error = %v", err)
+			t.Errorf("LoadConfig() error = %v", err)
 		}
-		if len(wrappers) != 2 {
-			t.Errorf("loadConfig() returned %d wrappers, want 2", len(wrappers))
+		if len(cfg.WrapperPatterns) != 2 {
+			t.Errorf("LoadConfig() returned %d wrappers, want 2", len(cfg.WrapperPatterns))
 		}
 	})
 
@@ -513,27 +439,21 @@ commands = ["env"]
 pattern = "[invalid"
 name = "bad"
 `)
-		if _, _, err := loadConfig(tomlData); err == nil {
-			t.Error("loadConfig() should return error for invalid regex")
+		if _, err := config.LoadConfig(tomlData); err == nil {
+			t.Error("LoadConfig() should return error for invalid regex")
 		}
 	})
 
 	t.Run("invalid TOML", func(t *testing.T) {
-		if _, _, err := loadConfig([]byte(`not valid {{{`)); err == nil {
-			t.Error("loadConfig() should return error for invalid TOML")
+		if _, err := config.LoadConfig([]byte(`not valid {{{`)); err == nil {
+			t.Error("LoadConfig() should return error for invalid TOML")
 		}
 	})
 }
 
 func TestInitConfig(t *testing.T) {
-	origWrappers := wrapperPatterns
-	origCommands := safeCommands
-	origInitialized := configInitialized
-	defer func() {
-		wrapperPatterns = origWrappers
-		safeCommands = origCommands
-		configInitialized = origInitialized
-	}()
+	// Reset config state
+	config.Reset()
 
 	tmpDir, err := os.MkdirTemp("", "mmi-init-test-*")
 	if err != nil {
@@ -545,19 +465,16 @@ func TestInitConfig(t *testing.T) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Setenv("MMI_CONFIG", origEnv)
 
-	configInitialized = false
-	wrapperPatterns = nil
-	safeCommands = nil
-
-	if err := initConfig(); err != nil {
-		t.Errorf("initConfig() error = %v", err)
+	if err := config.Init(); err != nil {
+		t.Errorf("Init() error = %v", err)
 	}
 
-	if len(wrapperPatterns) == 0 {
-		t.Error("wrapperPatterns is empty")
+	cfg := config.Get()
+	if len(cfg.WrapperPatterns) == 0 {
+		t.Error("WrapperPatterns is empty")
 	}
-	if len(safeCommands) == 0 {
-		t.Error("safeCommands is empty")
+	if len(cfg.SafeCommands) == 0 {
+		t.Error("SafeCommands is empty")
 	}
 	if _, err := os.Stat(filepath.Join(tmpDir, "config.toml")); os.IsNotExist(err) {
 		t.Error("config.toml was not created")
@@ -565,14 +482,8 @@ func TestInitConfig(t *testing.T) {
 }
 
 func TestConfigCustomization(t *testing.T) {
-	origWrappers := wrapperPatterns
-	origCommands := safeCommands
-	origInitialized := configInitialized
-	defer func() {
-		wrapperPatterns = origWrappers
-		safeCommands = origCommands
-		configInitialized = origInitialized
-	}()
+	// Reset config state
+	config.Reset()
 
 	tmpDir, err := os.MkdirTemp("", "mmi-custom-test-*")
 	if err != nil {
@@ -595,20 +506,18 @@ subcommands = ["arg"]
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Setenv("MMI_CONFIG", origEnv)
 
-	configInitialized = false
-	wrapperPatterns = nil
-	safeCommands = nil
-
-	if err := initConfig(); err != nil {
-		t.Errorf("initConfig() error = %v", err)
+	if err := config.Init(); err != nil {
+		t.Errorf("Init() error = %v", err)
 	}
 
+	cfg := config.Get()
+
 	// Verify custom patterns work
-	core, wrappers := stripWrappers("custom mycommand arg")
+	core, wrappers := hook.StripWrappers("custom mycommand arg", cfg.WrapperPatterns)
 	if len(wrappers) != 1 || wrappers[0] != "custom" {
 		t.Errorf("Custom wrapper not stripped: %v", wrappers)
 	}
-	if checkSafe(core) != "mycommand" {
+	if hook.CheckSafe(core, cfg.SafeCommands) != "mycommand" {
 		t.Errorf("Custom command not recognized: %q", core)
 	}
 }
