@@ -1,6 +1,7 @@
 # mmi configuration - safe commands and wrappers for Claude Code bash approval
 #
 # Structure:
+#   [deny.*]     - patterns that are ALWAYS rejected (checked first)
 #   [wrappers.*] - prefixes stripped before checking the core command
 #   [commands.*] - safe commands that are allowed to execute
 #
@@ -9,6 +10,41 @@
 #   [[*.command]]    - command = "cmd", flags = [...] - wrapper with flags
 #   [[*.subcommand]] - command = "cmd", subcommands = [...], flags = [...]
 #   [[*.regex]]      - pattern = "^regex$", name = "desc" - raw regex escape hatch
+
+# ============================================================
+# DENY LIST - patterns that are always rejected (checked first)
+# These override any approval patterns below
+# ============================================================
+
+# Dangerous commands that should never be auto-approved
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo", "su", "doas"]
+
+# Dangerous patterns with risky argument combinations
+[[deny.regex]]
+pattern = 'rm\s+(-[rRfF]+\s+)*/'
+name = "rm root"
+
+[[deny.regex]]
+pattern = 'chmod\s+(777|a\+rwx)'
+name = "chmod world-writable"
+
+[[deny.regex]]
+pattern = 'dd\s+.*of=/dev/'
+name = "dd to device"
+
+[[deny.regex]]
+pattern = '>\s*/dev/sd[a-z]'
+name = "write to disk"
+
+[[deny.regex]]
+pattern = 'mkfs\.'
+name = "format filesystem"
+
+[[deny.regex]]
+pattern = ':(){:|:&};:'
+name = "fork bomb"
 
 # ============================================================
 # WRAPPERS - prefixes stripped before checking the core command

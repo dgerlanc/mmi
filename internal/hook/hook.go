@@ -74,9 +74,18 @@ func ProcessWithResult(r io.Reader) Result {
 	cmd := input.ToolInput["command"]
 	logger.Debug("processing command", "command", cmd)
 
-	// Reject dangerous constructs
+	// Reject dangerous constructs (command substitution)
 	if dangerousPattern.MatchString(cmd) {
 		logger.Debug("rejected dangerous pattern", "command", cmd)
+		logAudit(cmd, false, "")
+		return Result{Command: cmd, Approved: false}
+	}
+
+	cfg := config.Get()
+
+	// Check deny list FIRST (before any approval checks)
+	if denyReason := CheckDeny(cmd, cfg.DenyPatterns); denyReason != "" {
+		logger.Debug("rejected by deny list", "command", cmd, "reason", denyReason)
 		logAudit(cmd, false, "")
 		return Result{Command: cmd, Approved: false}
 	}
@@ -84,16 +93,29 @@ func ProcessWithResult(r io.Reader) Result {
 	segments := SplitCommandChain(cmd)
 	logger.Debug("split command chain", "segments", len(segments))
 
-	cfg := config.Get()
 	var reasons []string
 
 	for i, segment := range segments {
+		// Check deny list for each segment too
+		if denyReason := CheckDeny(segment, cfg.DenyPatterns); denyReason != "" {
+			logger.Debug("segment rejected by deny list", "segment", segment, "reason", denyReason)
+			logAudit(cmd, false, "")
+			return Result{Command: cmd, Approved: false}
+		}
+
 		coreCmd, wrappers := StripWrappers(segment, cfg.WrapperPatterns)
 		logger.Debug("processing segment",
 			"index", i,
 			"segment", segment,
 			"core", coreCmd,
 			"wrappers", wrappers)
+
+		// Check deny list for core command after stripping wrappers
+		if denyReason := CheckDeny(coreCmd, cfg.DenyPatterns); denyReason != "" {
+			logger.Debug("core command rejected by deny list", "command", coreCmd, "reason", denyReason)
+			logAudit(cmd, false, "")
+			return Result{Command: cmd, Approved: false}
+		}
 
 		r := CheckSafe(coreCmd, cfg.SafeCommands)
 		if r == "" {
@@ -114,6 +136,17 @@ func ProcessWithResult(r io.Reader) Result {
 	logger.Debug("approved", "reason", reason)
 	logAudit(cmd, true, reason)
 	return Result{Command: cmd, Approved: true, Reason: reason}
+}
+
+// CheckDeny checks if a command matches any deny pattern.
+// Returns the pattern name if denied, or empty string if not.
+func CheckDeny(cmd string, denyPatterns []patterns.Pattern) string {
+	for _, p := range denyPatterns {
+		if p.Regex.MatchString(cmd) {
+			return p.Name
+		}
+	}
+	return ""
 }
 
 // logAudit logs a command decision to the audit log.

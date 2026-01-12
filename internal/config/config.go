@@ -22,6 +22,8 @@ type Config struct {
 	WrapperPatterns []patterns.Pattern
 	// SafeCommands are patterns for allowed commands
 	SafeCommands []patterns.Pattern
+	// DenyPatterns are patterns that are always rejected (checked before approval)
+	DenyPatterns []patterns.Pattern
 }
 
 var (
@@ -213,7 +215,60 @@ func LoadConfig(data []byte) (*Config, error) {
 		cfg.SafeCommands = commands
 	}
 
+	if denySection, ok := raw["deny"]; ok {
+		deny, err := parseDenySection(denySection)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse deny: %w", err)
+		}
+		cfg.DenyPatterns = deny
+	}
+
 	return cfg, nil
+}
+
+// parseDenySection parses the deny section of the config.
+// Deny patterns use simple and regex subsections (no subcommand support).
+func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
+	var result []patterns.Pattern
+
+	for sectionType, value := range sectionData {
+		switch sectionType {
+		case "simple":
+			// [[deny.simple]] name = "label", commands = [...]
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				name, _ := entry["name"].(string)
+				cmds := toStringSlice(entry["commands"])
+				for _, cmd := range cmds {
+					// For deny patterns, match the command at the start
+					pattern := patterns.BuildSimplePattern(cmd)
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid deny pattern for command %q: %w", cmd, err)
+					}
+					result = append(result, patterns.Pattern{Regex: re, Name: name})
+				}
+			}
+
+		case "regex":
+			// [[deny.regex]] pattern = "^regex", name = "desc"
+			entries := toMapSlice(value)
+			for _, entry := range entries {
+				pattern, _ := entry["pattern"].(string)
+				patternName, _ := entry["name"].(string)
+				if pattern == "" {
+					continue
+				}
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid deny regex pattern %q: %w", pattern, err)
+				}
+				result = append(result, patterns.Pattern{Regex: re, Name: patternName})
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // loadEmbeddedDefaults loads patterns from the embedded default config file.
