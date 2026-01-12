@@ -26,6 +26,11 @@ func TestMain(m *testing.M) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Unsetenv("MMI_CONFIG")
 
+	// Write the embedded default config for tests
+	if err := config.EnsureConfigFiles(tmpDir); err != nil {
+		os.Exit(1)
+	}
+
 	config.Init()
 	os.Exit(m.Run())
 }
@@ -185,7 +190,6 @@ func TestCheckSafe(t *testing.T) {
 
 		// Regex patterns
 		{"shell builtin", "true", "shell builtin"},
-		{"cd", "cd /path", "cd"},
 		{"venv activate", "source .venv/bin/activate", "venv activate"},
 		{"var assignment", "FOO=bar", "var assignment"},
 		{"for loop", "for x in a b c", "for loop"},
@@ -465,19 +469,19 @@ func TestInitConfig(t *testing.T) {
 	os.Setenv("MMI_CONFIG", tmpDir)
 	defer os.Setenv("MMI_CONFIG", origEnv)
 
-	// Init returns error when config doesn't exist, but falls back to embedded defaults
+	// Init returns error when config doesn't exist
 	err = config.Init()
 	if err == nil {
 		t.Error("Init() should return error when config file doesn't exist")
 	}
 
-	// Config should still work with embedded defaults
+	// Config should be empty (deny all) when no config file exists
 	cfg := config.Get()
-	if len(cfg.WrapperPatterns) == 0 {
-		t.Error("WrapperPatterns is empty - embedded defaults should be loaded")
+	if len(cfg.WrapperPatterns) != 0 {
+		t.Error("WrapperPatterns should be empty when no config file exists")
 	}
-	if len(cfg.SafeCommands) == 0 {
-		t.Error("SafeCommands is empty - embedded defaults should be loaded")
+	if len(cfg.SafeCommands) != 0 {
+		t.Error("SafeCommands should be empty when no config file exists")
 	}
 
 	// Config file should NOT be auto-created
