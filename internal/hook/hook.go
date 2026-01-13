@@ -166,7 +166,7 @@ func ProcessWithResult(r io.Reader) Result {
 	// Reject dangerous constructs (command substitution outside quoted heredocs)
 	if containsDangerousPattern(cmd) {
 		logger.Debug("rejected dangerous pattern", "command", cmd)
-		logAudit(cmd, false, "")
+		logAudit(cmd, false, "dangerous pattern")
 		return Result{Command: cmd, Approved: false}
 	}
 
@@ -175,7 +175,7 @@ func ProcessWithResult(r io.Reader) Result {
 	// Check deny list FIRST (before any approval checks)
 	if denyReason := CheckDeny(cmd, cfg.DenyPatterns); denyReason != "" {
 		logger.Debug("rejected by deny list", "command", cmd, "reason", denyReason)
-		logAudit(cmd, false, "")
+		logAudit(cmd, false, denyReason)
 		return Result{Command: cmd, Approved: false}
 	}
 
@@ -188,7 +188,7 @@ func ProcessWithResult(r io.Reader) Result {
 		// Check deny list for each segment too
 		if denyReason := CheckDeny(segment, cfg.DenyPatterns); denyReason != "" {
 			logger.Debug("segment rejected by deny list", "segment", segment, "reason", denyReason)
-			logAudit(cmd, false, "")
+			logAudit(cmd, false, denyReason)
 			return Result{Command: cmd, Approved: false}
 		}
 
@@ -202,14 +202,14 @@ func ProcessWithResult(r io.Reader) Result {
 		// Check deny list for core command after stripping wrappers
 		if denyReason := CheckDeny(coreCmd, cfg.DenyPatterns); denyReason != "" {
 			logger.Debug("core command rejected by deny list", "command", coreCmd, "reason", denyReason)
-			logAudit(cmd, false, "")
+			logAudit(cmd, false, denyReason)
 			return Result{Command: cmd, Approved: false}
 		}
 
 		r := CheckSafe(coreCmd, cfg.SafeCommands)
 		if r == "" {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
-			logAudit(cmd, false, "")
+			logAudit(cmd, false, "unsafe command")
 			return Result{Command: cmd, Approved: false}
 		}
 		logger.Debug("matched pattern", "command", coreCmd, "pattern", r)
