@@ -158,12 +158,12 @@ func TestRootCmdFlags(t *testing.T) {
 	cmd.PersistentFlags().BoolVar(&noAuditLog, "no-audit-log", false, "Disable audit logging")
 
 	tests := []struct {
-		name            string
-		args            []string
-		expectVerbose   bool
-		expectDryRun    bool
-		expectProfile   string
-		expectNoAudit   bool
+		name          string
+		args          []string
+		expectVerbose bool
+		expectDryRun  bool
+		expectProfile string
+		expectNoAudit bool
 	}{
 		{
 			name:          "no flags",

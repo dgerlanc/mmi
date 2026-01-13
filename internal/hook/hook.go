@@ -261,6 +261,19 @@ func FormatApproval(reason string) string {
 	return string(data) + "\n"
 }
 
+// FormatAsk returns the JSON ask output with a trailing newline
+func FormatAsk(reason string) string {
+	output := Output{
+		HookSpecificOutput: SpecificOutput{
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       "ask",
+			PermissionDecisionReason: reason,
+		},
+	}
+	data, _ := json.Marshal(output)
+	return string(data) + "\n"
+}
+
 // SplitCommandChain splits command into segments on &&, ||, ;, |, & using a proper shell parser.
 // This handles quoted strings, redirections, and other shell syntax correctly.
 func SplitCommandChain(cmd string) []string {
