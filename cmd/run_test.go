@@ -246,9 +246,12 @@ func TestRunHookNormalModeRejectedSilent(t *testing.T) {
 	io.Copy(&buf, stdoutR)
 	output := buf.String()
 
-	// Rejected commands produce no output in normal mode
-	if output != "" {
-		t.Errorf("expected no output for rejected command, got: %s", output)
+	// Rejected commands produce ask JSON output
+	if output == "" {
+		t.Errorf("expected ask output for rejected command, got nothing")
+	}
+	if !strings.Contains(output, `"permissionDecision":"ask"`) {
+		t.Errorf("expected ask permission decision, got: %s", output)
 	}
 }
 

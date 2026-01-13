@@ -367,29 +367,50 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe command produces no output", func(t *testing.T) {
+	t.Run("unsafe command produces ask output", func(t *testing.T) {
 		input := `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`
 		output, _ := runMmi(t, input)
 
-		if output != "" {
-			t.Errorf("Expected no output, got %q", output)
+		if output == "" {
+			t.Errorf("Expected ask output, got nothing")
+		}
+		var result hook.Output
+		if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &result); err != nil {
+			t.Fatalf("Failed to parse output: %v", err)
+		}
+		if result.HookSpecificOutput.PermissionDecision != "ask" {
+			t.Errorf("Expected 'ask', got %q", result.HookSpecificOutput.PermissionDecision)
 		}
 	})
 
-	t.Run("non-Bash tool produces no output", func(t *testing.T) {
+	t.Run("non-Bash tool produces ask output", func(t *testing.T) {
 		input := `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`
 		output, _ := runMmi(t, input)
 
-		if output != "" {
-			t.Errorf("Expected no output, got %q", output)
+		if output == "" {
+			t.Errorf("Expected ask output, got nothing")
+		}
+		var result hook.Output
+		if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &result); err != nil {
+			t.Fatalf("Failed to parse output: %v", err)
+		}
+		if result.HookSpecificOutput.PermissionDecision != "ask" {
+			t.Errorf("Expected 'ask', got %q", result.HookSpecificOutput.PermissionDecision)
 		}
 	})
 
-	t.Run("invalid JSON produces no output", func(t *testing.T) {
+	t.Run("invalid JSON produces ask output", func(t *testing.T) {
 		output, exitCode := runMmi(t, "invalid json")
 
-		if output != "" {
-			t.Errorf("Expected no output, got %q", output)
+		if output == "" {
+			t.Errorf("Expected ask output, got nothing")
+		}
+		var result hook.Output
+		if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &result); err != nil {
+			t.Fatalf("Failed to parse output: %v", err)
+		}
+		if result.HookSpecificOutput.PermissionDecision != "ask" {
+			t.Errorf("Expected 'ask', got %q", result.HookSpecificOutput.PermissionDecision)
 		}
 		if exitCode != 0 {
 			t.Errorf("Expected exit 0, got %d", exitCode)
@@ -563,7 +584,7 @@ func TestInitConfig(t *testing.T) {
 		t.Error("Init() should return error when config file doesn't exist")
 	}
 
-	// Config should be empty (deny all) when no config file exists
+	// Config should be empty (ask all) when no config file exists
 	cfg := config.Get()
 	if len(cfg.WrapperPatterns) != 0 {
 		t.Error("WrapperPatterns should be empty when no config file exists")
