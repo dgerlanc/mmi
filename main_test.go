@@ -92,14 +92,6 @@ name = "venv activate"
 [[commands.regex]]
 pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
 name = "var assignment"
-
-[[commands.regex]]
-pattern = '^for\s+\w+\s+in\s'
-name = "for loop"
-
-[[commands.regex]]
-pattern = '^while\s'
-name = "while loop"
 `
 
 // TestMain sets up config for all tests
@@ -147,6 +139,11 @@ func TestProcess(t *testing.T) {
 		{"unsafe command", `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`, false, ""},
 		{"unsafe in chain", `{"tool_name":"Bash","tool_input":{"command":"git status && rm -rf /"}}`, false, ""},
 
+		// Unparseable commands
+		{"unclosed quote", `{"tool_name":"Bash","tool_input":{"command":"echo 'hello"}}`, false, "unparseable command"},
+		{"incomplete while", `{"tool_name":"Bash","tool_input":{"command":"while true"}}`, false, "unparseable command"},
+		{"incomplete for", `{"tool_name":"Bash","tool_input":{"command":"for x in a b c"}}`, false, "unparseable command"},
+
 		// Edge cases
 		{"non-Bash tool", `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`, false, ""},
 		{"invalid JSON", "invalid json {{{", false, ""},
@@ -189,27 +186,47 @@ func TestFormatApproval(t *testing.T) {
 
 func TestSplitCommandChain(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected []string
+		name      string
+		input     string
+		expected  []string
+		expectErr bool
 	}{
-		{"simple", "ls -la", []string{"ls -la"}},
-		{"empty", "", nil},
-		{"AND chain", "cmd1 && cmd2", []string{"cmd1", "cmd2"}},
-		{"OR chain", "cmd1 || cmd2", []string{"cmd1", "cmd2"}},
-		{"pipe", "cmd1 | cmd2", []string{"cmd1", "cmd2"}},
-		{"quoted AND", `echo "a && b"`, []string{`echo "a && b"`}},
+		{"simple", "ls -la", []string{"ls -la"}, false},
+		{"empty", "", nil, false},
+		{"AND chain", "cmd1 && cmd2", []string{"cmd1", "cmd2"}, false},
+		{"OR chain", "cmd1 || cmd2", []string{"cmd1", "cmd2"}, false},
+		{"pipe", "cmd1 | cmd2", []string{"cmd1", "cmd2"}, false},
+		{"quoted AND", `echo "a && b"`, []string{`echo "a && b"`}, false},
 		// Shell parser correctly separates redirections from commands
-		{"redirection", "cmd 2>&1", []string{"cmd"}},
+		{"redirection", "cmd 2>&1", []string{"cmd"}, false},
 		// Shell parser normalizes backslash-newline continuations
-		{"backslash newline", "cmd \\\n arg", []string{"cmd \\\n\targ"}},
+		{"backslash newline", "cmd \\\n arg", []string{"cmd \\\n\targ"}, false},
+		// Complete loops parse successfully and extract inner commands
+		{"complete while loop", "while true; do echo hi; done", []string{"true", "echo hi"}, false},
+		{"complete for loop", "for x in a b c; do echo $x; done", []string{"echo $x"}, false},
+		// Unparseable commands return error
+		{"unclosed single quote", "echo 'hello", nil, true},
+		{"unclosed double quote", `echo "hello`, nil, true},
+		{"incomplete while", "while true", nil, true},
+		{"incomplete for", "for x in a b c", nil, true},
+		{"incomplete if", "if true; then", nil, true},
+		{"unclosed brace", "{ echo", nil, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hook.SplitCommandChain(tt.input)
-			if !reflect.DeepEqual(got, tt.expected) {
-				t.Errorf("SplitCommandChain(%q) = %v, want %v", tt.input, got, tt.expected)
+			got, err := hook.SplitCommandChain(tt.input)
+			if tt.expectErr {
+				if err == nil {
+					t.Errorf("SplitCommandChain(%q) expected error, got nil", tt.input)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("SplitCommandChain(%q) unexpected error: %v", tt.input, err)
+				}
+				if !reflect.DeepEqual(got, tt.expected) {
+					t.Errorf("SplitCommandChain(%q) = %v, want %v", tt.input, got, tt.expected)
+				}
 			}
 		})
 	}
@@ -279,8 +296,6 @@ func TestCheckSafe(t *testing.T) {
 		{"shell builtin", "true", "shell builtin"},
 		{"venv activate", "source .venv/bin/activate", "venv activate"},
 		{"var assignment", "FOO=bar", "var assignment"},
-		{"for loop", "for x in a b c", "for loop"},
-		{"while loop", "while true", "while loop"},
 	}
 
 	for _, tt := range tests {

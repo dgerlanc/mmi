@@ -94,11 +94,3 @@ name = "shell builtin"
 [[commands.regex]]
 pattern = "^[A-Z_][A-Z0-9_]*=\S*$"
 name = "var assignment"
-
-[[commands.regex]]
-pattern = "^for\s+\w+\s+in\s"
-name = "for loop"
-
-[[commands.regex]]
-pattern = "^while\s"
-name = "while loop"

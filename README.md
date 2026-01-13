@@ -104,8 +104,8 @@ subcommands = ["diff", "log", "status", "add"]
 flags = ["-C <arg>"]
 
 [[commands.regex]]
-pattern = '^for\s+\w+\s+in\s'
-name = "for loop"
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
 ```
 
 ### Config Includes
@@ -229,7 +229,6 @@ The default configuration is intentionally restrictive. Use example configs for 
 | **Unix Utilities** | `ls`, `cat`, `head`, `tail`, `wc`, `find`, `grep`, `rg`, `file`, `which`, `pwd`, `du`, `df`, `curl`, `sort`, `uniq`, `cut`, `tr`, `awk`, `sed`, `xargs` |
 | **File Ops** | `touch`, `make` |
 | **Shell** | `echo`, `cd`, `true`, `false`, `exit`, `sleep` |
-| **Loops** | `for`, `while` |
 
 ### Additional Commands (via Example Configs)
 
@@ -260,9 +259,11 @@ Disable with `--no-audit-log`.
 
 - Deny patterns are checked first and override all approvals
 - Unrecognized commands are automatically rejected
+- Unparseable commands (incomplete syntax, unclosed quotes) are rejected
 - Command substitution (`$(...)` and backticks) is always rejected
 - Command chains are only approved if ALL segments are safe
 - Only explicitly allowlisted patterns are allowed
+- Shell loops (`while`, `for`) must be complete; their inner commands are extracted and validated individually
 
 ## Example Configurations
 

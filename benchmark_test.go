@@ -23,7 +23,7 @@ func BenchmarkSplitCommandChain(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = hook.SplitCommandChain(bm.cmd)
+				_, _ = hook.SplitCommandChain(bm.cmd)
 			}
 		})
 	}

@@ -33,7 +33,7 @@ func FuzzSplitCommandChain(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, cmd string) {
 		// Just ensure no panics
-		_ = hook.SplitCommandChain(cmd)
+		_, _ = hook.SplitCommandChain(cmd)
 	})
 }
 

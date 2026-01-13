@@ -58,8 +58,8 @@ For complex patterns that can't be expressed with the other types.
 
 ```toml
 [[commands.regex]]
-pattern = '^for\s+\w+\s+in\s'
-name = "for loop"
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
 ```
 
 ## Go Regex Syntax
@@ -110,11 +110,6 @@ pattern = '^rm\s+(-[rRfF]+\s+)*/'  # rm -rf /
 pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
 ```
 
-### Match shell for loop
-```toml
-pattern = '^for\s+\w+\s+in\s'
-```
-
 ### Match virtual environment path
 ```toml
 pattern = '^(\.\./)*\.?venv/bin/'
@@ -152,15 +147,19 @@ fmt.Println(re.MatchString("git push"))    // false
 
 ## Pattern Evaluation Order
 
-1. **Deny patterns** are checked first (against full command, each segment, and core command)
-2. **Dangerous patterns** (command substitution like `$()` or backticks)
-3. **Wrappers** are stripped from each command segment
-4. **Safe commands** are matched against the core command
+1. **Dangerous patterns** (command substitution like `$()` or backticks) are rejected immediately
+2. **Deny patterns** are checked (against full command, each segment, and core command)
+3. **Shell parsing** - command must be valid, parseable shell syntax
+4. **Wrappers** are stripped from each command segment
+5. **Safe commands** are matched against the core command
 
 A command is approved only if:
-- It does NOT match any deny pattern
 - It does NOT contain command substitution
+- It does NOT match any deny pattern
+- It IS valid, parseable shell syntax (incomplete loops, unclosed quotes are rejected)
 - The core command (after stripping wrappers) matches a safe pattern
+
+**Note:** Shell loops (`while`, `for`, `if`, etc.) must be complete. MMI extracts and validates their inner commands individually.
 
 ## Escaping Special Characters
 
