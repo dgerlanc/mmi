@@ -173,13 +173,6 @@ func ProcessWithResult(r io.Reader) Result {
 
 	cfg := config.Get()
 
-	// Check deny list FIRST (before any approval checks)
-	if denyReason := CheckDeny(cmd, cfg.DenyPatterns); denyReason != "" {
-		logger.Debug("rejected by deny list", "command", cmd, "reason", denyReason)
-		logAudit(cmd, false, denyReason)
-		return Result{Command: cmd, Approved: false}
-	}
-
 	segments, err := SplitCommandChain(cmd)
 	if err != nil {
 		logger.Debug("rejected unparseable command", "command", cmd)
@@ -191,13 +184,6 @@ func ProcessWithResult(r io.Reader) Result {
 	var reasons []string
 
 	for i, segment := range segments {
-		// Check deny list for each segment too
-		if denyReason := CheckDeny(segment, cfg.DenyPatterns); denyReason != "" {
-			logger.Debug("segment rejected by deny list", "segment", segment, "reason", denyReason)
-			logAudit(cmd, false, denyReason)
-			return Result{Command: cmd, Approved: false}
-		}
-
 		coreCmd, wrappers := StripWrappers(segment, cfg.WrapperPatterns)
 		logger.Debug("processing segment",
 			"index", i,
@@ -205,9 +191,9 @@ func ProcessWithResult(r io.Reader) Result {
 			"core", coreCmd,
 			"wrappers", wrappers)
 
-		// Check deny list for core command after stripping wrappers
+		// Check deny list on core command (after splitting chain and stripping wrappers)
 		if denyReason := CheckDeny(coreCmd, cfg.DenyPatterns); denyReason != "" {
-			logger.Debug("core command rejected by deny list", "command", coreCmd, "reason", denyReason)
+			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyReason)
 			logAudit(cmd, false, denyReason)
 			return Result{Command: cmd, Approved: false}
 		}
