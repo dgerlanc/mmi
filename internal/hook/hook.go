@@ -168,7 +168,7 @@ func ProcessWithResult(r io.Reader) Result {
 	if containsDangerousPattern(cmd) {
 		logger.Debug("rejected dangerous pattern", "command", cmd)
 		logAudit(cmd, false, "dangerous pattern")
-		return Result{Command: cmd, Approved: false}
+		return Result{Command: cmd, Approved: false, Reason: "dangerous pattern"}
 	}
 
 	cfg := config.Get()
@@ -195,14 +195,14 @@ func ProcessWithResult(r io.Reader) Result {
 		if denyReason := CheckDeny(coreCmd, cfg.DenyPatterns); denyReason != "" {
 			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyReason)
 			logAudit(cmd, false, denyReason)
-			return Result{Command: cmd, Approved: false}
+			return Result{Command: cmd, Approved: false, Reason: denyReason}
 		}
 
 		r := CheckSafe(coreCmd, cfg.SafeCommands)
 		if r == "" {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
 			logAudit(cmd, false, "unsafe command")
-			return Result{Command: cmd, Approved: false}
+			return Result{Command: cmd, Approved: false, Reason: "unsafe command"}
 		}
 		logger.Debug("matched pattern", "command", coreCmd, "pattern", r)
 
@@ -216,7 +216,7 @@ func ProcessWithResult(r io.Reader) Result {
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
 	logAudit(cmd, true, reason)
-	return Result{Command: cmd, Approved: true, Reason: reason}
+	return Result{Command: cmd, Approved: true}
 }
 
 // CheckDeny checks if a command matches any deny pattern.
