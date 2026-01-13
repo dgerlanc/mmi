@@ -30,11 +30,13 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - LICENSE*
       - README*
@@ -71,16 +73,12 @@ release:
   footer: |
     **Full Changelog**: https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-brews:
+homebrew_casks:
   - name: mmi
     repository:
       owner: dgerlanc
       name: homebrew-tap
     homepage: https://github.com/dgerlanc/mmi
     description: Claude Code Bash command approval hook
-    license: MIT
-    skip_upload: auto
-    install: |
-      bin.install "mmi"
-    test: |
-      system "#{bin}/mmi", "--help"
+    binaries:
+      - mmi

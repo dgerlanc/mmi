@@ -352,6 +352,36 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
+## Creating Releases
+
+Releases are automated via GitHub Actions and GoReleaser.
+
+### Steps
+
+1. **Update the changelog** - Move items from `[Unreleased]` to a versioned section in `CHANGELOG.md`:
+   ```markdown
+   ## [0.1.0] - 2026-01-13
+   ```
+
+2. **Create and push a git tag**:
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+3. **Automated release** - GitHub Actions will automatically:
+   - Build binaries for Linux, macOS, Windows (amd64 + arm64)
+   - Create the GitHub release with archives and checksums
+   - Update the Homebrew tap (`dgerlanc/homebrew-tap`)
+
+### Test Locally First (Optional)
+
+```bash
+just release-test
+```
+
+This validates the GoReleaser config and performs a dry-run snapshot build.
+
 ## License
 
 See LICENSE file for details.
