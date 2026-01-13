@@ -3,6 +3,7 @@ package hook
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -179,7 +180,12 @@ func ProcessWithResult(r io.Reader) Result {
 		return Result{Command: cmd, Approved: false}
 	}
 
-	segments := SplitCommandChain(cmd)
+	segments, err := SplitCommandChain(cmd)
+	if err != nil {
+		logger.Debug("rejected unparseable command", "command", cmd)
+		logAudit(cmd, false, "unparseable command")
+		return Result{Command: cmd, Approved: false, Reason: "unparseable command"}
+	}
 	logger.Debug("split command chain", "segments", len(segments))
 
 	var reasons []string
@@ -274,19 +280,22 @@ func FormatAsk(reason string) string {
 	return string(data) + "\n"
 }
 
+// ErrUnparseable is returned when a command cannot be parsed.
+var ErrUnparseable = errors.New("unparseable command")
+
 // SplitCommandChain splits command into segments on &&, ||, ;, |, & using a proper shell parser.
 // This handles quoted strings, redirections, and other shell syntax correctly.
-func SplitCommandChain(cmd string) []string {
+// Returns ErrUnparseable if the command cannot be parsed.
+func SplitCommandChain(cmd string) ([]string, error) {
 	if strings.TrimSpace(cmd) == "" {
-		return nil
+		return nil, nil
 	}
 
 	// Parse the command using the shell parser
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(cmd), "")
 	if err != nil {
-		// If parsing fails, fall back to treating it as a single command
-		return []string{strings.TrimSpace(cmd)}
+		return nil, ErrUnparseable
 	}
 
 	var segments []string
@@ -297,7 +306,7 @@ func SplitCommandChain(cmd string) []string {
 		extractCommands(stmt.Cmd, printer, &segments)
 	}
 
-	return segments
+	return segments, nil
 }
 
 // extractCommands recursively extracts simple commands from a shell AST node.

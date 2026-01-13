@@ -147,8 +147,9 @@ Claude Code Hook Input (JSON)
          │
          ▼
     ┌─────────────────────────────────┐
-    │ 4. Split Command Chain          │
+    │ 4. Parse & Split Command Chain  │
     │    (&&, ||, |, ;, &)            │
+    │    Reject if unparseable        │
     └─────────────────────────────────┘
          │
          ▼
@@ -198,6 +199,8 @@ EOF
 Uses `mvdan.cc/sh/v3/syntax` for proper shell parsing:
 - Handles: `&&`, `||`, `|`, `;`, `&`
 - Extracts commands from AST nodes: `CallExpr`, `BinaryCmd`, `Subshell`, `Block`, `IfClause`, `WhileClause`, `ForClause`
+- **Unparseable commands are rejected** (incomplete syntax, unclosed quotes, etc.)
+- Shell loops (`while`, `for`, `if`) must be complete; their inner commands are extracted and validated individually
 - **All segments must be safe** for approval
 
 ---
@@ -244,8 +247,8 @@ subcommands = ["diff", "log", "status", "branch"]
 flags = ["-C <arg>"]
 
 [[commands.regex]]
-pattern = '^for\s+\w+\s+in\s'
-name = "for loop"
+pattern = '^(true|false|exit(\s+\d+)?)$'
+name = "shell builtin"
 ```
 
 ### 5.3 Pattern Types
@@ -387,6 +390,7 @@ JSON-lines (one JSON object per line):
 
 - Deny patterns checked **first** and override all approvals
 - Unrecognized commands automatically **rejected**
+- Unparseable commands (incomplete syntax, unclosed quotes) **rejected**
 - Command substitution always **rejected** (except in quoted heredocs)
 - Command chains only approved if **ALL segments** are safe
 - Only **explicitly allowlisted** patterns are approved
@@ -401,7 +405,8 @@ JSON-lines (one JSON object per line):
 
 ### 9.3 No Bypass Paths
 
-- Silent failures for unparseable JSON
+- Silent failures for unparseable JSON input
+- Explicit rejection for unparseable shell commands
 - Graceful fallback to embedded defaults if config missing
 - Profile specified but not found = error (not fallback)
 
