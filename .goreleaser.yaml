@@ -73,12 +73,12 @@ release:
   footer: |
     **Full Changelog**: https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-homebrew_casks:
-  - name: mmi
-    repository:
-      owner: dgerlanc
-      name: homebrew-tap
-    homepage: https://github.com/dgerlanc/mmi
-    description: Claude Code Bash command approval hook
-    binaries:
-      - mmi
+# homebrew_casks:
+#   - name: mmi
+#     repository:
+#       owner: dgerlanc
+#       name: homebrew-tap
+#     homepage: https://github.com/dgerlanc/mmi
+#     description: Claude Code Bash command approval hook
+#     binaries:
+#       - mmi
