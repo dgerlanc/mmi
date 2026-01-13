@@ -22,11 +22,11 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "mmi",
 	Short: "Mother May I? - Claude Code Bash command approval hook",
-	Long: `MMI (Mother May I?) is a PreToolUse hook for Claude Code that auto-approves
-safe Bash commands based on configurable patterns.
+	Long: `MMI (Mother May I?) is a PreToolUse hook for Claude Code that
+approves or rejects Bash commands based on configurable patterns.
 
 When called without arguments, it reads a JSON command from stdin and outputs
-an approval JSON to stdout if the command is safe.
+an the approval decision to stdout as JSON.
 
 Usage in ~/.claude/settings.json:
   "hooks": {

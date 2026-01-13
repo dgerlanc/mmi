@@ -18,7 +18,7 @@ import (
 type Result struct {
 	Command  string // The command that was processed
 	Approved bool   // Whether the command was approved
-	Reason   string // The reason for approval (empty if rejected)
+	Reason   string // The reason for approval/denial
 }
 
 // Input represents the JSON input from Claude Code
@@ -139,14 +139,14 @@ func containsDangerousPattern(cmd string) bool {
 	return false
 }
 
-// Process reads from r and returns whether the command should be approved and the reason.
+// Read a command and return whether it should be approved and the reason.
 // Returns false for parse errors, non-Bash tools, dangerous patterns, or unsafe commands.
 func Process(r io.Reader) (approved bool, reason string) {
 	result := ProcessWithResult(r)
 	return result.Approved, result.Reason
 }
 
-// ProcessWithResult reads from r and returns a Result with full details.
+// ProcessWithResult reads from a stream and returns a Result with full details.
 // This is useful when the caller needs the original command for logging.
 func ProcessWithResult(r io.Reader) Result {
 	var input Input
