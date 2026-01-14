@@ -237,26 +237,6 @@ func rotateFiles() error {
 		return fmt.Errorf("failed to get backup files: %w", err)
 	}
 
-	// Delete excess backups
-	if compactionCfg.MaxBackups > 0 && len(backups) >= compactionCfg.MaxBackups {
-		// Sort by number (oldest first)
-		sort.Slice(backups, func(i, j int) bool {
-			return backups[i].num < backups[j].num
-		})
-
-		// Delete oldest files beyond the limit
-		for i := 0; i <= len(backups)-compactionCfg.MaxBackups; i++ {
-			if err := os.Remove(backups[i].path); err != nil && !os.IsNotExist(err) {
-				logger.Debug("failed to remove old backup", "path", backups[i].path, "error", err)
-			} else {
-				logger.Debug("removed old backup", "path", backups[i].path)
-			}
-		}
-
-		// Remove deleted files from the list
-		backups = backups[len(backups)-compactionCfg.MaxBackups+1:]
-	}
-
 	// Rotate existing backups (audit.log.1 -> audit.log.2, etc.)
 	// Process in reverse order to avoid overwriting
 	sort.Slice(backups, func(i, j int) bool {
@@ -286,6 +266,34 @@ func rotateFiles() error {
 		if err := compressFile(newPath); err != nil {
 			logger.Debug("failed to compress rotated log", "path", newPath, "error", err)
 			// Don't fail rotation if compression fails
+		}
+	}
+
+	// Delete excess backups after rotation completes successfully
+	// This ensures no data loss if rotation fails partway through
+	if compactionCfg.MaxBackups > 0 {
+		// Re-fetch backup files to get current state after rotation
+		backups, err := getBackupFiles()
+		if err != nil {
+			logger.Debug("failed to get backup files for cleanup", "error", err)
+			// Don't fail rotation if cleanup check fails
+			return nil
+		}
+
+		if len(backups) > compactionCfg.MaxBackups {
+			// Sort by number (oldest first)
+			sort.Slice(backups, func(i, j int) bool {
+				return backups[i].num < backups[j].num
+			})
+
+			// Delete oldest files beyond the limit
+			for i := 0; i <= len(backups)-compactionCfg.MaxBackups-1; i++ {
+				if err := os.Remove(backups[i].path); err != nil && !os.IsNotExist(err) {
+					logger.Debug("failed to remove old backup", "path", backups[i].path, "error", err)
+				} else {
+					logger.Debug("removed old backup", "path", backups[i].path)
+				}
+			}
 		}
 	}
 
