@@ -63,7 +63,7 @@ func DefaultLogPath() (string, error) {
 
 // Init initializes the audit log. If path is empty, uses the default path.
 // If path is "-" or audit logging should be disabled, pass disable=true.
-// Pass nil for cfg to use default compaction settings, or a zero-value config to disable compaction.
+// Pass nil for cfg to use default compaction settings. Set cfg.MaxSize to 0 to disable rotation.
 func Init(path string, disable bool, cfg *CompactionConfig) error {
 	mu.Lock()
 	defer mu.Unlock()
