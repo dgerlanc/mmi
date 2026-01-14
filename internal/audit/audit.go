@@ -353,14 +353,12 @@ func compressFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create compressed file: %w", err)
 	}
-	defer dst.Close()
 
 	// Create zstd encoder
 	encoder, err := zstd.NewWriter(dst)
 	if err != nil {
 		return fmt.Errorf("failed to create zstd encoder: %w", err)
 	}
-	defer encoder.Close()
 
 	// Copy data
 	if _, err := io.Copy(encoder, src); err != nil {
