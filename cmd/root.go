@@ -76,7 +76,8 @@ func initApp() {
 	config.Init()
 
 	// Initialize audit logging (unless disabled)
-	audit.Init("", noAuditLog)
+	// Use default compaction settings (10MB max size, 5 backups, compress enabled)
+	audit.Init("", noAuditLog, nil)
 }
 
 // IsVerbose returns whether verbose mode is enabled
