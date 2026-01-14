@@ -81,3 +81,84 @@
 22. **Add Homebrew formula** - Make installation easier on macOS.
 
 23. ~~**Add shell completions**~~ ✓ IMPLEMENTED - Shell completions are available via `mmi completion` command.
+
+## Additional Improvements
+
+### Security Enhancements
+
+24. **Audit log rotation and retention** - Currently audit logs can grow unbounded. This feature would add:
+   - Size-based or date-based log rotation (e.g., rotate at 10MB or daily)
+   - Configurable retention policy (keep last N log files)
+   - Prevention of disk exhaustion attacks
+   - Could use `lumberjack` library or similar
+
+25. **Secure audit log permissions** - Audit logs are currently created with `0644` (world-readable). This feature would:
+   - Change file creation to `0600` (user-only read/write)
+   - Change directory creation from `0755` to `0700`
+   - Prevent information leakage to other users on shared systems
+
+26. **Regex complexity validation** - User-supplied regex patterns are not validated for ReDoS vulnerability. This feature would:
+   - Validate patterns for catastrophic backtracking potential
+   - Add optional timeout for regex operations
+   - Warn on potentially problematic patterns during `mmi validate`
+   - Example problematic pattern: `(a+)+b` could hang on inputs like `aaaaaaaaaaaaaaaaaaaaaaaaaaaa!`
+
+### Testing Improvements
+
+27. **Improve hook package test coverage** - The hook package currently has only 21.1% test coverage (compared to 100% for the patterns package). This would add:
+   - Direct unit tests for `ProcessWithResult()` function
+   - Tests for audit logging integration
+   - Tests for all decision paths (approved, denied, unparseable, non-Bash)
+   - Tests for error recovery scenarios
+
+28. **Add concurrent access tests** - Test thread safety under load:
+   - Concurrent audit log writes
+   - Concurrent config reads
+   - Race condition detection using `go test -race`
+   - Stress testing with parallel command evaluations
+
+29. **Add Unicode and edge case tests** - Expand test coverage for edge cases:
+   - Non-ASCII characters in commands (emoji, international characters)
+   - Very long command strings (performance boundaries)
+   - Pathological inputs beyond current fuzz corpus
+   - Memory usage validation under stress
+
+### Feature Additions
+
+30. **Audit log analysis command** - New `mmi audit` subcommand to analyze audit history:
+   - Show approval/rejection statistics (e.g., "85% approved, 15% rejected")
+   - Filter by date range, command pattern, or decision
+   - Identify frequently rejected commands (potential config improvements)
+   - Export reports in JSON or CSV format
+
+31. **Audit log integrity verification** - Tamper detection for audit trail:
+   - Option to sign or hash audit entries
+   - Verification command to detect modifications
+   - Chain hashing (each entry includes hash of previous)
+   - Useful for compliance and forensics
+
+32. **Remote audit log support** - Send audit entries to external services:
+   - Syslog protocol support for enterprise logging systems
+   - Webhook support for custom integrations
+   - Configurable backends (multiple destinations)
+   - Async delivery with local buffering on failure
+
+### Documentation
+
+33. **Security policy (SECURITY.md)** - Document security considerations:
+   - Threat model and security boundaries
+   - Responsible disclosure process
+   - Known limitations and non-goals
+   - Security best practices for configuration
+
+34. **Contributing guidelines (CONTRIBUTING.md)** - Development documentation:
+   - Code style requirements and Go idioms
+   - Testing requirements (coverage thresholds, test types)
+   - Pull request process and review criteria
+   - Development environment setup instructions
+
+35. **Test coverage badges in README** - Visibility into code quality:
+   - Add coverage badge showing overall percentage
+   - Link to detailed HTML coverage report
+   - Encourage maintaining high coverage standards
+   - Could use codecov.io or similar service
