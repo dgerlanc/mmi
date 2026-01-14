@@ -338,7 +338,8 @@ func getBackupFiles() ([]backupFile, error) {
 	return backups, nil
 }
 
-// compressFile compresses a file using zstd and removes the original
+// compressFile compresses a file using zstd and removes the original.
+// Uses a temporary file and atomic rename to ensure no partial files are left on error.
 func compressFile(path string) error {
 	// Open source file
 	src, err := os.Open(path)
@@ -347,13 +348,18 @@ func compressFile(path string) error {
 	}
 	defer src.Close()
 
-	// Create compressed file
+	// Create temporary compressed file
 	dstPath := path + ".zst"
-	dst, err := os.Create(dstPath)
+	tmpPath := dstPath + ".tmp"
+	dst, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("failed to create compressed file: %w", err)
+		return fmt.Errorf("failed to create temporary compressed file: %w", err)
 	}
-	defer dst.Close()
+	defer func() {
+		dst.Close()
+		// Clean up temp file if it still exists (indicates an error occurred)
+		os.Remove(tmpPath)
+	}()
 
 	// Create zstd encoder
 	encoder, err := zstd.NewWriter(dst)
@@ -377,7 +383,12 @@ func compressFile(path string) error {
 		return fmt.Errorf("failed to close compressed file: %w", err)
 	}
 
-	// Remove original file
+	// Atomically rename temp file to final destination
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		return fmt.Errorf("failed to rename compressed file: %w", err)
+	}
+
+	// Remove original file only after successful compression and rename
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("failed to remove original file: %w", err)
 	}
