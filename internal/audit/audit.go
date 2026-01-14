@@ -2,7 +2,6 @@
 package audit
 
 import (
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dgerlanc/mmi/internal/logger"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Entry represents a single audit log entry.
@@ -30,7 +30,7 @@ type CompactionConfig struct {
 	MaxSize int64
 	// MaxBackups is the maximum number of old log files to retain (0 = keep all)
 	MaxBackups int
-	// Compress indicates whether to gzip rotated log files
+	// Compress indicates whether to compress rotated log files using zstd
 	Compress bool
 }
 
@@ -266,7 +266,7 @@ func rotateFiles() error {
 	for _, backup := range backups {
 		newPath := fmt.Sprintf("%s.%d", auditPath, backup.num+1)
 		if backup.compressed {
-			newPath += ".gz"
+			newPath += ".zst"
 		}
 		if err := os.Rename(backup.path, newPath); err != nil {
 			return fmt.Errorf("failed to rotate %s to %s: %w", backup.path, newPath, err)
@@ -319,10 +319,10 @@ func getBackupFiles() ([]backupFile, error) {
 		var num int
 		var compressed bool
 
-		// Check for .gz extension
-		if filepath.Ext(name) == ".gz" {
+		// Check for .zst extension
+		if filepath.Ext(name) == ".zst" {
 			compressed = true
-			name = name[:len(name)-3] // Remove .gz
+			name = name[:len(name)-4] // Remove .zst
 		}
 
 		// Match audit.log.N pattern
@@ -338,7 +338,7 @@ func getBackupFiles() ([]backupFile, error) {
 	return backups, nil
 }
 
-// compressFile compresses a file using gzip and removes the original
+// compressFile compresses a file using zstd and removes the original
 func compressFile(path string) error {
 	// Open source file
 	src, err := os.Open(path)
@@ -348,25 +348,28 @@ func compressFile(path string) error {
 	defer src.Close()
 
 	// Create compressed file
-	dstPath := path + ".gz"
+	dstPath := path + ".zst"
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		return fmt.Errorf("failed to create compressed file: %w", err)
 	}
 	defer dst.Close()
 
-	// Create gzip writer
-	gzw := gzip.NewWriter(dst)
-	defer gzw.Close()
+	// Create zstd encoder
+	encoder, err := zstd.NewWriter(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+	defer encoder.Close()
 
 	// Copy data
-	if _, err := io.Copy(gzw, src); err != nil {
+	if _, err := io.Copy(encoder, src); err != nil {
 		return fmt.Errorf("failed to compress data: %w", err)
 	}
 
-	// Close gzip writer to flush
-	if err := gzw.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip writer: %w", err)
+	// Close encoder to flush
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("failed to close zstd encoder: %w", err)
 	}
 
 	// Close destination file

@@ -273,13 +273,13 @@ func TestLogRotation(t *testing.T) {
 	// Check for compressed files
 	hasCompressed := false
 	for _, name := range logFiles {
-		if strings.HasSuffix(name, ".gz") {
+		if strings.HasSuffix(name, ".zst") {
 			hasCompressed = true
 			break
 		}
 	}
 	if !hasCompressed {
-		t.Error("Expected at least one compressed log file")
+		t.Error("Expected at least one compressed log file (.zst)")
 	}
 }
 
