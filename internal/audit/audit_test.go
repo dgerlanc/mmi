@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -386,5 +387,291 @@ func TestNoRotationWhenDisabled(t *testing.T) {
 
 	if logFileCount != 1 {
 		t.Errorf("Expected exactly 1 log file when rotation disabled, got %d", logFileCount)
+	}
+}
+
+func TestCompressFileAtomicRename(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create a test file to compress
+	testFile := filepath.Join(tmpDir, "test.log")
+	testContent := "test data for compression\n"
+	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Set auditPath for compressFile to work correctly
+	auditPath = filepath.Join(tmpDir, "audit.log")
+
+	// Compress the file
+	if err := compressFile(testFile); err != nil {
+		t.Fatalf("compressFile() error = %v", err)
+	}
+
+	// Verify compressed file exists
+	compressedFile := testFile + ".zst"
+	if _, err := os.Stat(compressedFile); os.IsNotExist(err) {
+		t.Error("Compressed file was not created")
+	}
+
+	// Verify original file was removed
+	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+		t.Error("Original file was not removed after compression")
+	}
+
+	// Verify no temp file was left behind
+	tempFile := compressedFile + ".tmp"
+	if _, err := os.Stat(tempFile); !os.IsNotExist(err) {
+		t.Error("Temporary file was not cleaned up")
+	}
+}
+
+func TestGetBackupFiles(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set auditPath for getBackupFiles
+	auditPath = filepath.Join(tmpDir, "audit.log")
+
+	// Create various backup files
+	files := []string{
+		"audit.log.1",
+		"audit.log.2.zst",
+		"audit.log.3",
+		"audit.log.5.zst",
+		"other.log",      // Should be ignored
+		"audit.log.txt",  // Should be ignored
+	}
+
+	for _, file := range files {
+		path := filepath.Join(tmpDir, file)
+		if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+			t.Fatalf("Failed to create test file %s: %v", file, err)
+		}
+	}
+
+	// Get backup files
+	backups, err := getBackupFiles()
+	if err != nil {
+		t.Fatalf("getBackupFiles() error = %v", err)
+	}
+
+	// Should find 4 backup files (1, 2.zst, 3, 5.zst)
+	if len(backups) != 4 {
+		t.Errorf("Expected 4 backup files, got %d", len(backups))
+	}
+
+	// Verify correct files were found
+	foundNums := make(map[int]bool)
+	foundCompressed := make(map[int]bool)
+	for _, backup := range backups {
+		foundNums[backup.num] = true
+		if backup.compressed {
+			foundCompressed[backup.num] = true
+		}
+	}
+
+	expectedNums := []int{1, 2, 3, 5}
+	for _, num := range expectedNums {
+		if !foundNums[num] {
+			t.Errorf("Expected to find backup number %d", num)
+		}
+	}
+
+	// Verify compression detection
+	if !foundCompressed[2] {
+		t.Error("Expected audit.log.2.zst to be marked as compressed")
+	}
+	if !foundCompressed[5] {
+		t.Error("Expected audit.log.5.zst to be marked as compressed")
+	}
+	if foundCompressed[1] {
+		t.Error("Expected audit.log.1 to NOT be marked as compressed")
+	}
+	if foundCompressed[3] {
+		t.Error("Expected audit.log.3 to NOT be marked as compressed")
+	}
+}
+
+func TestRotationPreservesData(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	// Initialize with small size and no compression for easier verification
+	cfg := &CompactionConfig{
+		MaxSize:    200,
+		MaxBackups: 3,
+		Compress:   false,
+	}
+
+	if err := Init(logPath, false, cfg); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	defer Close()
+
+	// Log entries and track what we logged
+	var loggedCommands []string
+	for i := 0; i < 15; i++ {
+		cmd := fmt.Sprintf("command-%d", i)
+		loggedCommands = append(loggedCommands, cmd)
+		entry := Entry{
+			Command:  cmd,
+			Approved: true,
+		}
+		if err := Log(entry); err != nil {
+			t.Errorf("Log() error = %v", err)
+		}
+	}
+
+	Close()
+
+	// Read all log files and verify all commands are present
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to read dir: %v", err)
+	}
+
+	var allCommands []string
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "audit.log") {
+			continue
+		}
+
+		filePath := filepath.Join(tmpDir, entry.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Errorf("Failed to read %s: %v", entry.Name(), err)
+			continue
+		}
+
+		lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			var e Entry
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				t.Errorf("Failed to parse entry in %s: %v", entry.Name(), err)
+				continue
+			}
+			allCommands = append(allCommands, e.Command)
+		}
+	}
+
+	// Verify all logged commands are present
+	if len(allCommands) != len(loggedCommands) {
+		t.Errorf("Expected %d commands in log files, got %d", len(loggedCommands), len(allCommands))
+	}
+
+	for i, cmd := range loggedCommands {
+		found := false
+		for _, loggedCmd := range allCommands {
+			if cmd == loggedCmd {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Command %d (%s) was not found in log files", i, cmd)
+		}
+	}
+}
+
+func TestRotationWithMixedCompressedUncompressed(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	auditPath = filepath.Join(tmpDir, "audit.log")
+
+	// Create mix of compressed and uncompressed backups
+	files := map[string]bool{
+		"audit.log.1":     false,
+		"audit.log.2.zst": true,
+		"audit.log.3":     false,
+	}
+
+	for file := range files {
+		path := filepath.Join(tmpDir, file)
+		if err := os.WriteFile(path, []byte("test data"), 0644); err != nil {
+			t.Fatalf("Failed to create %s: %v", file, err)
+		}
+	}
+
+	// Create current log file
+	if err := os.WriteFile(auditPath, []byte("current"), 0644); err != nil {
+		t.Fatalf("Failed to create current log: %v", err)
+	}
+
+	// Set config
+	compactionCfg = CompactionConfig{
+		MaxSize:    100,
+		MaxBackups: 5,
+		Compress:   false,
+	}
+
+	// Rotate files
+	if err := rotateFiles(); err != nil {
+		t.Fatalf("rotateFiles() error = %v", err)
+	}
+
+	// Verify rotation worked correctly
+	expectedFiles := map[string]bool{
+		"audit.log.1":     false, // New rotation from current
+		"audit.log.2":     false, // Old audit.log.1
+		"audit.log.3.zst": true,  // Old audit.log.2.zst
+		"audit.log.4":     false, // Old audit.log.3
+	}
+
+	for file, shouldBeCompressed := range expectedFiles {
+		path := filepath.Join(tmpDir, file)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("Expected file %s to exist after rotation", file)
+		}
+
+		// Verify compression state matches expectation
+		isCompressed := strings.HasSuffix(file, ".zst")
+		if isCompressed != shouldBeCompressed {
+			t.Errorf("File %s: compression state mismatch (expected %v, got %v)",
+				file, shouldBeCompressed, isCompressed)
+		}
+	}
+}
+
+func TestDefaultCompactionConfig(t *testing.T) {
+	cfg := DefaultCompactionConfig()
+
+	if cfg.MaxSize != 10*1024*1024 {
+		t.Errorf("Expected MaxSize = 10MB, got %d", cfg.MaxSize)
+	}
+
+	if cfg.MaxBackups != 5 {
+		t.Errorf("Expected MaxBackups = 5, got %d", cfg.MaxBackups)
+	}
+
+	if !cfg.Compress {
+		t.Error("Expected Compress = true")
 	}
 }
