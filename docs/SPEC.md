@@ -86,9 +86,22 @@ type Config struct {
 
 **Input** (from Claude Code via stdin):
 ```go
+// ToolInputData represents the tool_input field
+type ToolInputData struct {
+    Command     string // Required: the bash command
+    Description string // Optional: command description
+    Timeout     int    // Optional: timeout in milliseconds
+}
+
 type Input struct {
-    ToolName  string            // "Bash"
-    ToolInput map[string]string // {"command": "git status"}
+    SessionID      string        // Required: session identifier
+    TranscriptPath string        // Required: path to transcript file
+    Cwd            string        // Required: current working directory
+    PermissionMode string        // Required: permission mode
+    HookEventName  string        // Required: "PreToolUse"
+    ToolName       string        // Required: "Bash"
+    ToolInput      ToolInputData // Required: tool-specific input
+    ToolUseID      string        // Required: tool use identifier
 }
 ```
 
@@ -334,12 +347,21 @@ Add to `~/.claude/settings.json`:
 **Input** (stdin JSON from Claude Code):
 ```json
 {
+  "session_id": "abc123",
+  "transcript_path": "/Users/.../.claude/projects/.../session.jsonl",
+  "cwd": "/Users/...",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
-    "command": "git status"
-  }
+    "command": "git status",
+    "description": "Check repository status",
+    "timeout": 120000
+  },
+  "tool_use_id": "toolu_01ABC123..."
 }
 ```
+Note: `description` and `timeout` in `tool_input` are optional; all other fields are required.
 
 **Output** (stdout JSON to Claude Code):
 ```json

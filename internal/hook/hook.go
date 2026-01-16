@@ -22,10 +22,23 @@ type Result struct {
 	Reason   string // The reason for approval/denial
 }
 
+// ToolInputData represents the tool_input field in the Claude Code hook input
+type ToolInputData struct {
+	Command     string `json:"command"`
+	Description string `json:"description,omitempty"` // optional
+	Timeout     int    `json:"timeout,omitempty"`     // optional
+}
+
 // Input represents the JSON input from Claude Code
 type Input struct {
-	ToolName  string            `json:"tool_name"`
-	ToolInput map[string]string `json:"tool_input"`
+	SessionID      string        `json:"session_id"`
+	TranscriptPath string        `json:"transcript_path"`
+	Cwd            string        `json:"cwd"`
+	PermissionMode string        `json:"permission_mode"`
+	HookEventName  string        `json:"hook_event_name"`
+	ToolName       string        `json:"tool_name"`
+	ToolInput      ToolInputData `json:"tool_input"`
+	ToolUseID      string        `json:"tool_use_id"`
 }
 
 // Output represents the approval JSON output
@@ -161,7 +174,7 @@ func ProcessWithResult(r io.Reader) Result {
 		return Result{}
 	}
 
-	cmd := input.ToolInput["command"]
+	cmd := input.ToolInput.Command
 	logger.Debug("processing command", "command", cmd)
 
 	// Reject dangerous constructs (command substitution outside quoted heredocs)
