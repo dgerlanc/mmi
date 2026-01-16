@@ -101,30 +101,6 @@ name = "rm root"
 	}
 }
 
-func TestGetProfilePath(t *testing.T) {
-	path := GetProfilePath("/home/user/.config/mmi", "strict")
-	expected := "/home/user/.config/mmi/profiles/strict.toml"
-	if path != expected {
-		t.Errorf("expected %q, got %q", expected, path)
-	}
-}
-
-func TestSetProfile(t *testing.T) {
-	// Reset state
-	Reset()
-
-	SetProfile("test-profile")
-	if GetProfile() != "test-profile" {
-		t.Errorf("expected profile to be 'test-profile', got %q", GetProfile())
-	}
-
-	// Reset clears profile
-	Reset()
-	if GetProfile() != "" {
-		t.Errorf("expected profile to be empty after reset, got %q", GetProfile())
-	}
-}
-
 // Validation tests
 
 func TestValidateSimpleCommandsMissing(t *testing.T) {

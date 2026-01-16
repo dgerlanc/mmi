@@ -13,7 +13,6 @@ import (
 func resetGlobalState() {
 	verbose = false
 	dryRun = false
-	profile = ""
 	noAuditLog = false
 	config.Reset()
 }
@@ -60,29 +59,7 @@ func TestIsDryRun(t *testing.T) {
 	}
 }
 
-func TestGetProfile(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    string
-		expected string
-	}{
-		{"empty profile", "", ""},
-		{"named profile", "strict", "strict"},
-		{"profile with dash", "my-profile", "my-profile"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resetGlobalState()
-			profile = tt.value
-			if got := GetProfile(); got != tt.expected {
-				t.Errorf("GetProfile() = %q, want %q", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestInitAppWithEnvProfile(t *testing.T) {
+func TestInitAppWithEnvConfig(t *testing.T) {
 	resetGlobalState()
 
 	// Create temp config directory
@@ -100,50 +77,13 @@ commands = ["echo"]
 		t.Fatal(err)
 	}
 
-	// Set profile via environment variable
-	os.Setenv("MMI_PROFILE", "test-profile")
-	defer os.Unsetenv("MMI_PROFILE")
-
 	// Run initApp
 	initApp()
 
-	// Verify profile was picked up from env var
-	if config.GetProfile() != "test-profile" {
-		t.Errorf("expected profile 'test-profile' from env var, got %q", config.GetProfile())
-	}
-}
-
-func TestInitAppProfileFlagOverridesEnv(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp config directory
-	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	// Write minimal config
-	configContent := `
-[[commands.simple]]
-name = "test"
-commands = ["echo"]
-`
-	if err := os.WriteFile(tmpDir+"/config.toml", []byte(configContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Set profile via environment variable
-	os.Setenv("MMI_PROFILE", "env-profile")
-	defer os.Unsetenv("MMI_PROFILE")
-
-	// Set profile via flag (simulating --profile flag)
-	profile = "flag-profile"
-
-	// Run initApp
-	initApp()
-
-	// Flag profile should be used (since it's already set, env var is not checked)
-	if config.GetProfile() != "flag-profile" {
-		t.Errorf("expected profile 'flag-profile' from flag, got %q", config.GetProfile())
+	// Verify config was loaded (no error means success)
+	cfg := config.Get()
+	if cfg == nil {
+		t.Error("expected config to be loaded")
 	}
 }
 
@@ -154,7 +94,6 @@ func TestRootCmdFlags(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	cmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Test command approval")
-	cmd.PersistentFlags().StringVar(&profile, "profile", "", "Config profile to use")
 	cmd.PersistentFlags().BoolVar(&noAuditLog, "no-audit-log", false, "Disable audit logging")
 
 	tests := []struct {
@@ -162,7 +101,6 @@ func TestRootCmdFlags(t *testing.T) {
 		args          []string
 		expectVerbose bool
 		expectDryRun  bool
-		expectProfile string
 		expectNoAudit bool
 	}{
 		{
@@ -170,7 +108,6 @@ func TestRootCmdFlags(t *testing.T) {
 			args:          []string{},
 			expectVerbose: false,
 			expectDryRun:  false,
-			expectProfile: "",
 			expectNoAudit: false,
 		},
 		{
@@ -178,7 +115,6 @@ func TestRootCmdFlags(t *testing.T) {
 			args:          []string{"-v"},
 			expectVerbose: true,
 			expectDryRun:  false,
-			expectProfile: "",
 			expectNoAudit: false,
 		},
 		{
@@ -186,7 +122,6 @@ func TestRootCmdFlags(t *testing.T) {
 			args:          []string{"--verbose"},
 			expectVerbose: true,
 			expectDryRun:  false,
-			expectProfile: "",
 			expectNoAudit: false,
 		},
 		{
@@ -194,15 +129,6 @@ func TestRootCmdFlags(t *testing.T) {
 			args:          []string{"--dry-run"},
 			expectVerbose: false,
 			expectDryRun:  true,
-			expectProfile: "",
-			expectNoAudit: false,
-		},
-		{
-			name:          "profile flag",
-			args:          []string{"--profile", "strict"},
-			expectVerbose: false,
-			expectDryRun:  false,
-			expectProfile: "strict",
 			expectNoAudit: false,
 		},
 		{
@@ -210,16 +136,14 @@ func TestRootCmdFlags(t *testing.T) {
 			args:          []string{"--no-audit-log"},
 			expectVerbose: false,
 			expectDryRun:  false,
-			expectProfile: "",
 			expectNoAudit: true,
 		},
 		{
 			name:          "multiple flags",
-			args:          []string{"-v", "--dry-run", "--profile", "test"},
+			args:          []string{"-v", "--dry-run", "--no-audit-log"},
 			expectVerbose: true,
 			expectDryRun:  true,
-			expectProfile: "test",
-			expectNoAudit: false,
+			expectNoAudit: true,
 		},
 	}
 
@@ -228,7 +152,6 @@ func TestRootCmdFlags(t *testing.T) {
 			// Reset flags
 			verbose = false
 			dryRun = false
-			profile = ""
 			noAuditLog = false
 
 			cmd.SetArgs(tt.args)
@@ -245,9 +168,6 @@ func TestRootCmdFlags(t *testing.T) {
 			}
 			if dryRun != tt.expectDryRun {
 				t.Errorf("dryRun = %v, want %v", dryRun, tt.expectDryRun)
-			}
-			if profile != tt.expectProfile {
-				t.Errorf("profile = %q, want %q", profile, tt.expectProfile)
 			}
 			if noAuditLog != tt.expectNoAudit {
 				t.Errorf("noAuditLog = %v, want %v", noAuditLog, tt.expectNoAudit)

@@ -151,43 +151,6 @@ func TestLogWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestLogWithProfile(t *testing.T) {
-	defer Reset()
-
-	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	logPath := filepath.Join(tmpDir, "audit.log")
-
-	if err := Init(logPath, false); err != nil {
-		t.Fatalf("Init() error = %v", err)
-	}
-
-	entry := Entry{
-		Command:  "git status",
-		Approved: true,
-		Reason:   "git",
-		Profile:  "minimal",
-	}
-	if err := Log(entry); err != nil {
-		t.Errorf("Log() error = %v", err)
-	}
-
-	Close()
-
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
-	}
-
-	if !strings.Contains(string(content), `"profile":"minimal"`) {
-		t.Error("Log entry should contain profile")
-	}
-}
-
 func TestClose(t *testing.T) {
 	defer Reset()
 

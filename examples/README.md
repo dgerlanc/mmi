@@ -46,23 +46,15 @@ Rust development focused configuration:
 - Common Rust tooling
 
 ### strict.toml
-A strict profile that only allows read-only commands.
+A strict configuration that only allows read-only commands.
 Useful for CI environments or when maximum caution is needed.
 
-## Profiles
+## Using Different Configurations
 
-You can also use these as profiles by copying them to the profiles directory:
+To use different configurations for different projects, set the `MMI_CONFIG` environment variable to point to a different config directory:
 
 ```bash
-mkdir -p ~/.config/mmi/profiles
-cp examples/strict.toml ~/.config/mmi/profiles/strict.toml
-```
-
-Then use with:
-```bash
-mmi --profile strict
-# or
-export MMI_PROFILE=strict
+export MMI_CONFIG=/path/to/project/.mmi
 ```
 
 ## Creating Custom Configs
