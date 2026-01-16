@@ -34,7 +34,7 @@ mmi/
 │   ├── hook/              # Command approval logic
 │   │   └── hook.go        # Core approval algorithm
 │   ├── config/            # Configuration loading
-│   │   └── config.go      # TOML parsing, includes, profiles
+│   │   └── config.go      # TOML parsing, includes
 │   ├── patterns/          # Pattern utilities
 │   │   └── patterns.go    # Regex building and compilation
 │   ├── audit/             # Audit logging
@@ -126,7 +126,6 @@ type Entry struct {
     Command   string    // The command evaluated
     Approved  bool      // Approval result
     Reason    string    // Pattern name or deny reason
-    Profile   string    // Configuration profile used
 }
 ```
 
@@ -281,13 +280,7 @@ name = "shell builtin"
 | `BuildSubcommandPattern("git", ["status", "log"], [])` | `^git\s+(status\|log)\b` |
 | `BuildWrapperPattern("timeout", ["<arg>"])` | `^timeout\s+(\S+\s+)?` |
 
-### 5.5 Profiles
-
-Alternative configurations stored in `~/.config/mmi/profiles/<name>.toml`:
-- Selected via `--profile NAME` flag or `MMI_PROFILE` env var
-- Completely replaces default config (not merged)
-
-### 5.6 Embedded Default Config
+### 5.5 Embedded Default Config
 
 - Restrictive by design (fail-secure)
 - Used when no config file exists
@@ -312,7 +305,6 @@ Alternative configurations stored in `~/.config/mmi/profiles/<name>.toml`:
 |------|-------------|
 | `-v, --verbose` | Enable debug logging |
 | `--dry-run` | Test commands without JSON output |
-| `--profile NAME` | Use specific config profile |
 | `--no-audit-log` | Disable audit logging |
 
 ### 6.3 Init Command Flags
@@ -390,7 +382,7 @@ Note: `description` and `timeout` in `tool_input` are optional; all other fields
 
 JSON-lines (one JSON object per line):
 ```json
-{"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git","profile":""}
+{"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git"}
 {"timestamp":"2025-01-15T10:30:05Z","command":"sudo rm -rf /","approved":false,"reason":"privilege escalation"}
 ```
 
@@ -402,7 +394,6 @@ JSON-lines (one JSON object per line):
 | `command` | The command evaluated |
 | `approved` | Boolean approval result |
 | `reason` | Pattern name (approved) or deny reason (rejected) |
-| `profile` | Configuration profile used (empty = default) |
 
 ---
 
@@ -430,7 +421,6 @@ JSON-lines (one JSON object per line):
 - Silent failures for unparseable JSON input
 - Explicit rejection for unparseable shell commands
 - Graceful fallback to embedded defaults if config missing
-- Profile specified but not found = error (not fallback)
 
 ---
 
@@ -505,7 +495,6 @@ just ci           # Full CI simulation
 | Variable | Purpose |
 |----------|---------|
 | `MMI_CONFIG` | Custom config directory |
-| `MMI_PROFILE` | Default profile name |
 
 ---
 

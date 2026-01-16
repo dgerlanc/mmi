@@ -10,9 +10,6 @@ import (
 
 // runHook is the default command that processes stdin for command approval
 func runHook(cmd *cobra.Command, args []string) {
-	// Set profile for audit logging
-	hook.SetProfile(profile)
-
 	// Process the command
 	result := hook.ProcessWithResult(os.Stdin)
 

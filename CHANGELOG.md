@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`mmi completion`**: Shell completion scripts for bash, zsh, fish, and PowerShell
 - **`--dry-run` flag**: Test command approval without JSON output
 - **`--verbose` / `-v` flag**: Enable debug logging
-- **`--profile` flag**: Select configuration profile
 - **`--no-audit-log` flag**: Disable audit logging
 
 #### Configuration
@@ -24,8 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `[[deny.simple]]` for command names
   - `[[deny.regex]]` for custom patterns
 - **Config includes**: Split config across multiple files with `include = [...]`
-- **Config profiles**: Multiple named configs in `~/.config/mmi/profiles/`
-  - Select via `--profile` flag or `MMI_PROFILE` env var
 
 #### Logging & Debugging
 - **Structured logging**: Debug output using Go's `log/slog`

@@ -61,14 +61,6 @@ type byteRange struct {
 	start, end int
 }
 
-// currentProfile holds the current profile name for audit logging
-var currentProfile string
-
-// SetProfile sets the current profile name for audit logging.
-func SetProfile(profile string) {
-	currentProfile = profile
-}
-
 // findQuotedHeredocRanges parses a command and returns byte ranges of heredoc content
 // where the delimiter is quoted (single or double quotes). Quoted heredocs don't perform
 // shell expansion, so backticks and $() inside them are literal text, not command substitution.
@@ -249,7 +241,6 @@ func logAudit(command string, approved bool, reason string) {
 		Command:  command,
 		Approved: approved,
 		Reason:   reason,
-		Profile:  currentProfile,
 	})
 }
 

@@ -116,22 +116,7 @@ Split your configuration across multiple files:
 include = ["python.toml", "rust.toml"]
 ```
 
-### Config Profiles
-
-Create named profiles in `~/.config/mmi/profiles/`:
-
-```bash
-~/.config/mmi/profiles/strict.toml
-~/.config/mmi/profiles/python.toml
-```
-
-Select a profile via flag or environment variable:
-
-```bash
-mmi --profile strict
-# or
-MMI_PROFILE=strict mmi
-```
+To use different configurations for different projects, set the `MMI_CONFIG` environment variable to point to a different config directory.
 
 ## CLI Commands
 
@@ -182,7 +167,6 @@ mmi completion powershell > mmi.ps1
 |------|-------------|
 | `-v, --verbose` | Enable debug logging |
 | `--dry-run` | Test command approval without JSON output |
-| `--profile NAME` | Use a specific config profile |
 | `--no-audit-log` | Disable audit logging |
 
 ## How It Works
@@ -316,7 +300,7 @@ Use `mmi validate` to see your compiled patterns, or use the `--dry-run` flag to
 
 ### Can I have different configurations for different projects?
 
-Yes, use profiles. Store configurations in `~/.config/mmi/profiles/<name>.toml` and activate with `--profile <name>` flag or `MMI_PROFILE` environment variable.
+Yes, use the `MMI_CONFIG` environment variable to point to a different config directory. For example, set `MMI_CONFIG=/path/to/project/.mmi` to use a project-specific configuration.
 
 ### How do wrappers work?
 
@@ -333,10 +317,6 @@ Common causes:
 - **Command substitution**: Commands containing `$(...)` or backticks are always rejected
 - **Command chains**: If using `&&`, `||`, `|`, or `;`, all segments must be approved
 - **Pattern mismatch**: Use `mmi validate` to verify your patterns and `--verbose` to see why rejection occurred
-
-### What's the difference between config includes and profiles?
-
-**Includes** merge patterns from multiple TOML files into a single configuration (e.g., `include = ["python.toml", "rust.toml"]`). **Profiles** are complete alternative configurations stored in `~/.config/mmi/profiles/` and selected via `--profile` or `MMI_PROFILE`. Use includes to compose rules; use profiles to switch between different setups entirely.
 
 ## Testing
 

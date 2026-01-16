@@ -17,7 +17,6 @@ type Entry struct {
 	Command   string    `json:"command"`
 	Approved  bool      `json:"approved"`
 	Reason    string    `json:"reason,omitempty"`
-	Profile   string    `json:"profile,omitempty"`
 }
 
 var (

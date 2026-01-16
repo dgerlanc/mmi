@@ -59,7 +59,7 @@
 
 17. ~~**Support config includes**~~ ✓ IMPLEMENTED - Config can be split into multiple files using includes.
 
-18. ~~**Add config profiles**~~ ✓ IMPLEMENTED - Multiple named profiles are supported and switchable via environment variable.
+18. ~~**Add config profiles**~~ ✗ REMOVED - Use `MMI_CONFIG` environment variable to point to different config directories instead.
 
 19. **Config schema validation** - Create a JSON Schema (or TOML equivalent) that describes the config file structure. This enables:
    - **IDE autocompletion**: Editors like VS Code can suggest valid keys and values as you type

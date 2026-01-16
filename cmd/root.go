@@ -2,8 +2,6 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/logger"
@@ -14,7 +12,6 @@ var (
 	// Global flags
 	verbose    bool
 	dryRun     bool
-	profile    string
 	noAuditLog bool
 )
 
@@ -53,24 +50,13 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output (debug logging)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Test command approval without JSON output")
-	rootCmd.PersistentFlags().StringVar(&profile, "profile", "", "Config profile to use (or set MMI_PROFILE env var)")
 	rootCmd.PersistentFlags().BoolVar(&noAuditLog, "no-audit-log", false, "Disable audit logging")
 }
 
 // initApp initializes the application (logger, config, audit)
 func initApp() {
-	// Check for profile from env var if not set via flag
-	if profile == "" {
-		profile = os.Getenv("MMI_PROFILE")
-	}
-
 	// Initialize logger
 	logger.Init(logger.Options{Verbose: verbose})
-
-	// Set profile before initializing config
-	if profile != "" {
-		config.SetProfile(profile)
-	}
 
 	// Initialize config (uses embedded defaults if no config file exists)
 	config.Init()
@@ -87,9 +73,4 @@ func IsVerbose() bool {
 // IsDryRun returns whether dry-run mode is enabled
 func IsDryRun() bool {
 	return dryRun
-}
-
-// GetProfile returns the current profile name
-func GetProfile() string {
-	return profile
 }
