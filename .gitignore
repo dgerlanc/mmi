@@ -4,6 +4,8 @@ mmi
 # Claude Code plans
 .claude/
 
+.issues/
+
 # Test artifacts
 coverage.out
 coverage.html
