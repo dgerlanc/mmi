@@ -240,6 +240,7 @@ Uses `mvdan.cc/sh/v3/syntax` for proper shell parsing:
 - **Unparseable commands are rejected** (incomplete syntax, unclosed quotes, etc.)
 - Shell loops (`while`, `for`, `if`) must be complete; their inner commands are extracted and validated individually
 - **All segments must be safe** for approval
+- **All segments are evaluated** regardless of whether earlier segments are rejected (for complete audit logging)
 
 ---
 
@@ -511,7 +512,7 @@ When parsing logs, check for the `version` field to determine format:
 
 - Shell parser (`mvdan.cc/sh`) for correct AST-based command splitting
 - Quoted heredoc detection prevents false positives on literal backticks
-- Segment-by-segment chain validation
+- Segment-by-segment chain validation with **complete evaluation** (all segments evaluated and logged, even after rejection)
 - Wrapper stripping before core command validation
 - Re-check deny patterns after wrapper stripping
 

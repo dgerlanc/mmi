@@ -203,7 +203,9 @@ func ProcessWithResult(r io.Reader) Result {
 
 	var reasons []string
 	var auditSegments []audit.Segment
+	overallApproved := true
 
+	// Evaluate ALL segments - don't return early on rejection
 	for i, segment := range cmdSegments {
 		coreCmd, wrappers := StripWrappers(segment, cfg.WrapperPatterns)
 		logger.Debug("processing segment",
@@ -216,8 +218,7 @@ func ProcessWithResult(r io.Reader) Result {
 		denyResult := CheckDenyWithResult(coreCmd, cfg.DenyPatterns)
 		if denyResult.Denied {
 			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyResult.Name)
-			durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
-			// Add already processed segments plus the denied one
+			overallApproved = false
 			auditSegments = append(auditSegments, audit.Segment{
 				Command:  segment,
 				Approved: false,
@@ -228,27 +229,26 @@ func ProcessWithResult(r io.Reader) Result {
 					Pattern: denyResult.Pattern,
 				},
 			})
-			logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
-			return Result{Command: cmd, Approved: false}
+			continue
 		}
 
+		// Check safe patterns
 		safeResult := CheckSafeWithResult(coreCmd, cfg.SafeCommands)
 		if !safeResult.Matched {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
-			durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
-			// Add already processed segments plus the rejected one
+			overallApproved = false
 			auditSegments = append(auditSegments, audit.Segment{
 				Command:   segment,
 				Approved:  false,
 				Wrappers:  wrappers,
 				Rejection: &audit.Rejection{Code: audit.CodeNoMatch},
 			})
-			logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
-			return Result{Command: cmd, Approved: false}
+			continue
 		}
+
 		logger.Debug("matched pattern", "command", coreCmd, "pattern", safeResult.Name)
 
-		// Add approved segment
+		// Approved segment
 		auditSegments = append(auditSegments, audit.Segment{
 			Command:  segment,
 			Approved: true,
@@ -267,9 +267,14 @@ func ProcessWithResult(r io.Reader) Result {
 		}
 	}
 
+	// Log and return based on overall result
+	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+	if !overallApproved {
+		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
+		return Result{Command: cmd, Approved: false}
+	}
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
-	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
 	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 	return Result{Command: cmd, Approved: true, Reason: reason}
 }
