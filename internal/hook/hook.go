@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
@@ -155,6 +156,8 @@ func Process(r io.Reader) (approved bool, reason string) {
 // ProcessWithResult reads from a stream and returns a Result with full details.
 // This is useful when the caller needs the original command for logging.
 func ProcessWithResult(r io.Reader) Result {
+	startTime := time.Now()
+
 	var input Input
 	if err := json.NewDecoder(r).Decode(&input); err != nil {
 		logger.Debug("failed to decode input", "error", err)
@@ -172,23 +175,36 @@ func ProcessWithResult(r io.Reader) Result {
 	// Reject dangerous constructs (command substitution outside quoted heredocs)
 	if containsDangerousPattern(cmd) {
 		logger.Debug("rejected dangerous pattern", "command", cmd)
-		logAudit(cmd, false, "dangerous pattern")
+		durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+		segments := []audit.Segment{{
+			Command:   cmd,
+			Approved:  false,
+			Rejection: &audit.Rejection{Code: audit.CodeCommandSubstitution, Pattern: "$(...)"},
+		}}
+		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 		return Result{Command: cmd, Approved: false}
 	}
 
 	cfg := config.Get()
 
-	segments, err := SplitCommandChain(cmd)
+	cmdSegments, err := SplitCommandChain(cmd)
 	if err != nil {
 		logger.Debug("rejected unparseable command", "command", cmd)
-		logAudit(cmd, false, "unparseable command")
+		durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+		segments := []audit.Segment{{
+			Command:   cmd,
+			Approved:  false,
+			Rejection: &audit.Rejection{Code: audit.CodeUnparseable, Detail: "parse error"},
+		}}
+		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 		return Result{Command: cmd, Approved: false, Reason: "unparseable command"}
 	}
-	logger.Debug("split command chain", "segments", len(segments))
+	logger.Debug("split command chain", "segments", len(cmdSegments))
 
 	var reasons []string
+	var auditSegments []audit.Segment
 
-	for i, segment := range segments {
+	for i, segment := range cmdSegments {
 		coreCmd, wrappers := StripWrappers(segment, cfg.WrapperPatterns)
 		logger.Debug("processing segment",
 			"index", i,
@@ -197,30 +213,64 @@ func ProcessWithResult(r io.Reader) Result {
 			"wrappers", wrappers)
 
 		// Check deny list on core command (after splitting chain and stripping wrappers)
-		if denyReason := CheckDeny(coreCmd, cfg.DenyPatterns); denyReason != "" {
-			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyReason)
-			logAudit(cmd, false, denyReason)
+		denyResult := CheckDenyWithResult(coreCmd, cfg.DenyPatterns)
+		if denyResult.Denied {
+			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyResult.Name)
+			durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+			// Add already processed segments plus the denied one
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:  segment,
+				Approved: false,
+				Wrappers: wrappers,
+				Rejection: &audit.Rejection{
+					Code:    audit.CodeDenyMatch,
+					Name:    denyResult.Name,
+					Pattern: denyResult.Pattern,
+				},
+			})
+			logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 			return Result{Command: cmd, Approved: false}
 		}
 
-		r := CheckSafe(coreCmd, cfg.SafeCommands)
-		if r == "" {
+		safeResult := CheckSafeWithResult(coreCmd, cfg.SafeCommands)
+		if !safeResult.Matched {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
-			logAudit(cmd, false, "unsafe command")
+			durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+			// Add already processed segments plus the rejected one
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:   segment,
+				Approved:  false,
+				Wrappers:  wrappers,
+				Rejection: &audit.Rejection{Code: audit.CodeNoMatch},
+			})
+			logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 			return Result{Command: cmd, Approved: false}
 		}
-		logger.Debug("matched pattern", "command", coreCmd, "pattern", r)
+		logger.Debug("matched pattern", "command", coreCmd, "pattern", safeResult.Name)
+
+		// Add approved segment
+		auditSegments = append(auditSegments, audit.Segment{
+			Command:  segment,
+			Approved: true,
+			Wrappers: wrappers,
+			Match: &audit.Match{
+				Type:    safeResult.Type,
+				Name:    safeResult.Name,
+				Pattern: safeResult.Pattern,
+			},
+		})
 
 		if len(wrappers) > 0 {
-			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+r)
+			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+safeResult.Name)
 		} else {
-			reasons = append(reasons, r)
+			reasons = append(reasons, safeResult.Name)
 		}
 	}
 
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
-	logAudit(cmd, true, reason)
+	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
 	return Result{Command: cmd, Approved: true, Reason: reason}
 }
 
@@ -235,12 +285,61 @@ func CheckDeny(cmd string, denyPatterns []patterns.Pattern) string {
 	return ""
 }
 
+// SafeResult contains detailed information about a safe pattern match.
+type SafeResult struct {
+	Matched bool
+	Name    string
+	Type    string // simple, subcommand, regex, command
+	Pattern string
+}
+
+// CheckSafeWithResult checks if a command matches a safe pattern and returns details.
+func CheckSafeWithResult(cmd string, safeCommands []patterns.Pattern) SafeResult {
+	for _, p := range safeCommands {
+		if p.Regex.MatchString(cmd) {
+			return SafeResult{
+				Matched: true,
+				Name:    p.Name,
+				Type:    p.Type,
+				Pattern: p.Pattern,
+			}
+		}
+	}
+	return SafeResult{Matched: false}
+}
+
+// DenyResult contains detailed information about a deny pattern match.
+type DenyResult struct {
+	Denied  bool
+	Name    string
+	Pattern string
+}
+
+// CheckDenyWithResult checks if a command matches a deny pattern and returns details.
+func CheckDenyWithResult(cmd string, denyPatterns []patterns.Pattern) DenyResult {
+	for _, p := range denyPatterns {
+		if p.Regex.MatchString(cmd) {
+			return DenyResult{
+				Denied:  true,
+				Name:    p.Name,
+				Pattern: p.Pattern,
+			}
+		}
+	}
+	return DenyResult{Denied: false}
+}
+
 // logAudit logs a command decision to the audit log.
-func logAudit(command string, approved bool, reason string) {
+func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd string) {
 	audit.Log(audit.Entry{
-		Command:  command,
-		Approved: approved,
-		Reason:   reason,
+		Version:    1,
+		SessionID:  sessionID,
+		ToolUseID:  toolUseID,
+		Command:    command,
+		Approved:   approved,
+		Segments:   segments,
+		DurationMs: durationMs,
+		Cwd:        cwd,
 	})
 }
 
