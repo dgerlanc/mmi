@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-01-18
+
 ### Added
 - **v1 audit log format**: Rich metadata including version, tool_use_id, session_id, duration_ms, per-segment match details, and working directory
 - **Pre-commit support**: `.pre-commit-config.yaml` for automated checks
