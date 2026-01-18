@@ -998,3 +998,202 @@ commands = ["ls"]
 		t.Errorf("Expected DurationMs > 0, got %v", entry.DurationMs)
 	}
 }
+
+// Phase 5: All Segments Evaluation Tests
+// These tests verify that ALL segments in a piped/chained command are evaluated
+// and logged, even when one segment is rejected.
+
+func TestAllSegmentsEvaluatedInPipe(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "basic"
+commands = ["echo"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// First segment (echo 'sudo rm -rf /') is safe
+	// Second segment (./mmi --dry-run) is not in safe list
+	// Both should be logged
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "echo 'test' | cat"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+	// Both segments should be logged even though cat is not in safe list
+	if len(entry.Segments) != 2 {
+		t.Errorf("Expected 2 segments in audit log, got %d", len(entry.Segments))
+	}
+}
+
+func TestMultipleRejectedSegmentsAllCaptured(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "echo"
+commands = ["echo"]
+
+[deny]
+[[deny.regex]]
+name = "dangerous rm"
+pattern = "^rm\\s+-rf\\s+/"
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// First segment: rm -rf / (denied)
+	// Second segment: curl (no match)
+	// Both should be logged with their respective rejection reasons
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "rm -rf / && curl http://evil.com"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if len(entry.Segments) != 2 {
+		t.Fatalf("Expected 2 segments in audit log, got %d", len(entry.Segments))
+	}
+
+	// First segment should be denied
+	if entry.Segments[0].Rejection == nil {
+		t.Fatal("Expected first segment to have rejection")
+	}
+	if entry.Segments[0].Rejection.Code != audit.CodeDenyMatch {
+		t.Errorf("First segment Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeDenyMatch)
+	}
+
+	// Second segment should also be evaluated (no match)
+	if entry.Segments[1].Rejection == nil {
+		t.Fatal("Expected second segment to have rejection")
+	}
+	if entry.Segments[1].Rejection.Code != audit.CodeNoMatch {
+		t.Errorf("Second segment Rejection.Code = %q, want %q", entry.Segments[1].Rejection.Code, audit.CodeNoMatch)
+	}
+}
+
+func TestMixedApprovedRejectedSegments(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "basic"
+commands = ["ls", "pwd"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// First segment: ls (approved)
+	// Second segment: curl (rejected - no match)
+	// Third segment: pwd (would be approved, but should still be evaluated and logged)
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "ls && curl http://example.com && pwd"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if len(entry.Segments) != 3 {
+		t.Fatalf("Expected 3 segments in audit log, got %d", len(entry.Segments))
+	}
+
+	// Overall should be rejected
+	if entry.Approved {
+		t.Error("Expected overall command to be rejected")
+	}
+
+	// First segment (ls) should be approved
+	if !entry.Segments[0].Approved {
+		t.Error("Expected first segment (ls) to be approved")
+	}
+	if entry.Segments[0].Match == nil {
+		t.Error("Expected first segment to have match info")
+	}
+
+	// Second segment (curl) should be rejected
+	if entry.Segments[1].Approved {
+		t.Error("Expected second segment (curl) to be rejected")
+	}
+	if entry.Segments[1].Rejection == nil {
+		t.Fatal("Expected second segment to have rejection")
+	}
+	if entry.Segments[1].Rejection.Code != audit.CodeNoMatch {
+		t.Errorf("Second segment Rejection.Code = %q, want %q", entry.Segments[1].Rejection.Code, audit.CodeNoMatch)
+	}
+
+	// Third segment (pwd) should still be evaluated and approved
+	if !entry.Segments[2].Approved {
+		t.Error("Expected third segment (pwd) to be approved")
+	}
+	if entry.Segments[2].Match == nil {
+		t.Error("Expected third segment to have match info")
+	}
+}
+
+func TestDenyMatchStillEvaluatesSubsequentSegments(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "basic"
+commands = ["ls", "pwd", "echo"]
+
+[deny]
+[[deny.regex]]
+name = "dangerous rm"
+pattern = "^rm\\s+-rf\\s+/"
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// First segment: rm -rf / (denied)
+	// Second segment: ls (would be approved)
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "rm -rf / && ls"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if len(entry.Segments) != 2 {
+		t.Fatalf("Expected 2 segments in audit log, got %d", len(entry.Segments))
+	}
+
+	// First segment should be deny match
+	if entry.Segments[0].Rejection == nil || entry.Segments[0].Rejection.Code != audit.CodeDenyMatch {
+		t.Error("Expected first segment to be DENY_MATCH")
+	}
+
+	// Second segment should be evaluated and approved
+	if !entry.Segments[1].Approved {
+		t.Error("Expected second segment (ls) to be approved")
+	}
+}
