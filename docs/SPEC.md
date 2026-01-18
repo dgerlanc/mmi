@@ -172,36 +172,26 @@ Claude Code Hook Input (JSON)
          │
          ▼
     ┌─────────────────────────────────┐
-    │ 2. Check Dangerous Patterns     │
-    │    ($() and backticks)          │
-    │    Exception: Quoted heredocs   │
-    └─────────────────────────────────┘
-         │
-         ▼
-    ┌─────────────────────────────────┐
-    │ 3. Check Deny List              │
-    │    (Absolute rejection)         │
-    └─────────────────────────────────┘
-         │
-         ▼
-    ┌─────────────────────────────────┐
-    │ 4. Parse & Split Command Chain  │
+    │ 2. Parse & Split Command Chain  │
     │    (&&, ||, |, ;, &)            │
     │    Reject if unparseable        │
     └─────────────────────────────────┘
          │
          ▼
     ┌─────────────────────────────────┐
-    │ 5. For Each Segment:            │
-    │    a. Check deny list           │
-    │    b. Strip wrappers            │
-    │    c. Check deny on core cmd    │
-    │    d. Check safe patterns       │
+    │ 3. For Each Segment:            │
+    │    a. Check dangerous patterns  │
+    │       ($() and backticks)       │
+    │    b. Check deny list           │
+    │    c. Strip wrappers            │
+    │    d. Check deny on core cmd    │
+    │    e. Check safe patterns       │
     └─────────────────────────────────┘
          │
          ▼
     ┌─────────────────────────────────┐
-    │ 6. Log to Audit Trail           │
+    │ 4. Log to Audit Trail           │
+    │    (all segments evaluated)     │
     └─────────────────────────────────┘
          │
          ▼
@@ -224,6 +214,8 @@ Claude Code Hook Input (JSON)
 Command substitution is always rejected:
 - `$(...)` syntax
 - Backtick syntax
+
+**Per-segment checking**: Dangerous patterns are checked for each segment individually after the command is parsed and split. This ensures all segments are evaluated and logged in the audit trail, even if an earlier segment contains command substitution.
 
 **Exception**: Content inside quoted heredocs (single or double quoted delimiters) is treated as literal text:
 ```bash
