@@ -172,19 +172,6 @@ func ProcessWithResult(r io.Reader) Result {
 	cmd := input.ToolInput.Command
 	logger.Debug("processing command", "command", cmd)
 
-	// Reject dangerous constructs (command substitution outside quoted heredocs)
-	if containsDangerousPattern(cmd) {
-		logger.Debug("rejected dangerous pattern", "command", cmd)
-		durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
-		segments := []audit.Segment{{
-			Command:   cmd,
-			Approved:  false,
-			Rejection: &audit.Rejection{Code: audit.CodeCommandSubstitution, Pattern: "$(...)"},
-		}}
-		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
-		return Result{Command: cmd, Approved: false}
-	}
-
 	cfg := config.Get()
 
 	cmdSegments, err := SplitCommandChain(cmd)
@@ -213,6 +200,22 @@ func ProcessWithResult(r io.Reader) Result {
 			"segment", segment,
 			"core", coreCmd,
 			"wrappers", wrappers)
+
+		// Check for dangerous patterns (command substitution) in this segment
+		if containsDangerousPattern(segment) {
+			logger.Debug("rejected dangerous pattern in segment", "segment", segment)
+			overallApproved = false
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:  segment,
+				Approved: false,
+				Wrappers: wrappers,
+				Rejection: &audit.Rejection{
+					Code:    audit.CodeCommandSubstitution,
+					Pattern: "$(...)",
+				},
+			})
+			continue
+		}
 
 		// Check deny list on core command (after splitting chain and stripping wrappers)
 		denyResult := CheckDenyWithResult(coreCmd, cfg.DenyPatterns)
