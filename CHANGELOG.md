@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **v1 audit log format**: Rich metadata including version, tool_use_id, session_id, duration_ms, per-segment match details, and working directory
+- **Pre-commit support**: `.pre-commit-config.yaml` for automated checks
+
+### Changed
+- Command substitution (`$(...)` and backticks) now checked per segment instead of rejecting entire command
+- Hook input JSON schema updated to match Claude Code format (session_id, tool_use_id)
+- Audit log timestamps use 1 decimal place for milliseconds
+- Deny list checks consolidated to single location
+
+### Fixed
+- Piped commands now log all segments in audit entries
+
+### Removed
+- **Multiple profiles**: Removed `--profile` flag and `MMI_PROFILE` env var (use `MMI_CONFIG` to point to different config directories instead)
+
+## [0.1.1] - 2026-01-13
+
+### Changed
+- Pin goreleaser to v2.7.0
+
+### Fixed
+- **Security**: Reject unparseable bash commands instead of falling back to single segment treatment
+
+### Removed
+- Homebrew formula generation from GoReleaser config
+
+## [0.1.0] - 2026-01-13
+
+### Added
 
 #### CLI & Commands
 - **Cobra CLI framework**: Proper CLI with subcommands, flags, and help text
@@ -57,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `just coverage-html` - Generate HTML coverage report
 - `just release-test` - Test GoReleaser configuration
 
+#### Core Features
+- Basic command approval hook for Claude Code
+- Pattern-based command matching
+- Support for wrappers (env, timeout, etc.)
+- TOML configuration format
+
 ### Changed
 - Refactored monolithic `main.go` into modular package structure:
   - `cmd/` - CLI commands
@@ -68,11 +103,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Better handling of complex shell constructs (loops, conditionals, etc.)
-
-## [0.1.0] - Initial Release
-
-### Added
-- Basic command approval hook for Claude Code
-- Pattern-based command matching
-- Support for wrappers (env, timeout, etc.)
-- TOML configuration format
