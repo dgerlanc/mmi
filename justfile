@@ -84,3 +84,42 @@ fuzz-one target time="30s":
 release-test:
     goreleaser check
     goreleaser release --snapshot --clean
+
+# Create a new release (updates changelog, tags, and pushes)
+release version:
+    @just _release-check
+    @just _release-changelog {{version}}
+    @just _release-tag {{version}}
+    @echo "Release v{{version}} complete! GitHub Actions will build and publish."
+
+# Pre-release checks
+_release-check:
+    @echo "Running pre-release checks..."
+    @test -z "$(git status --porcelain)" || (echo "Error: Working directory not clean" && exit 1)
+    @test "$(git branch --show-current)" = "main" || (echo "Error: Must be on main branch" && exit 1)
+    @just ci
+    @echo "All pre-release checks passed."
+
+# Update changelog for release
+_release-changelog version:
+    @echo "Updating CHANGELOG.md for v{{version}}..."
+    @sed -i '' 's/## \[Unreleased\]/## [Unreleased]\n\n## [{{version}}] - '"$(date +%Y-%m-%d)"'/' CHANGELOG.md
+    git add CHANGELOG.md
+    git commit -m "Release v{{version}}"
+
+# Create and push release tag
+_release-tag version:
+    @echo "Creating tag v{{version}}..."
+    git tag "v{{version}}"
+    git push origin main
+    git push origin "v{{version}}"
+
+# Dry-run release (shows what would happen without making changes)
+release-dry-run version:
+    @echo "=== DRY RUN: Release v{{version}} ==="
+    @just _release-check
+    @echo "Would update CHANGELOG.md with version {{version}} and date $(date +%Y-%m-%d)"
+    @echo "Would commit: 'Release v{{version}}'"
+    @echo "Would create tag: v{{version}}"
+    @echo "Would push to origin"
+    @echo "=== DRY RUN COMPLETE ==="
