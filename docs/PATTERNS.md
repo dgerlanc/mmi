@@ -147,16 +147,18 @@ fmt.Println(re.MatchString("git push"))    // false
 
 ## Pattern Evaluation Order
 
-1. **Dangerous patterns** (command substitution like `$()` or backticks) are rejected immediately
-2. **Deny patterns** are checked (against full command, each segment, and core command)
-3. **Shell parsing** - command must be valid, parseable shell syntax
-4. **Wrappers** are stripped from each command segment
-5. **Safe commands** are matched against the core command
+1. **Shell parsing** - command must be valid, parseable shell syntax
+2. **For each segment:**
+   - **Dangerous patterns** (command substitution like `$()` or backticks) are checked
+   - **Deny patterns** are checked (against segment and core command)
+   - **Wrappers** are stripped from the segment
+   - **Safe commands** are matched against the core command
+3. **All segments are evaluated** regardless of whether earlier segments are rejected (for complete audit logging)
 
 A command is approved only if:
-- It does NOT contain command substitution
-- It does NOT match any deny pattern
 - It IS valid, parseable shell syntax (incomplete loops, unclosed quotes are rejected)
+- It does NOT contain command substitution in any segment
+- It does NOT match any deny pattern
 - The core command (after stripping wrappers) matches a safe pattern
 
 **Note:** Shell loops (`while`, `for`, `if`, etc.) must be complete. MMI extracts and validates their inner commands individually.
