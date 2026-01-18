@@ -1197,3 +1197,99 @@ pattern = "^rm\\s+-rf\\s+/"
 		t.Error("Expected second segment (ls) to be approved")
 	}
 }
+
+func TestCommandSubstitutionPerSegment(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "basic"
+commands = ["ls", "echo"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// First segment: ls (approved)
+	// Second segment: echo $(whoami) (command substitution - rejected)
+	// Third segment: ls (approved)
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "ls && echo $(whoami) && ls -la"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	// All three segments should be evaluated
+	if len(entry.Segments) != 3 {
+		t.Fatalf("Expected 3 segments in audit log, got %d", len(entry.Segments))
+	}
+
+	// Overall should be rejected
+	if entry.Approved {
+		t.Error("Expected overall command to be rejected")
+	}
+
+	// First segment (ls) should be approved
+	if !entry.Segments[0].Approved {
+		t.Error("Expected first segment (ls) to be approved")
+	}
+
+	// Second segment (echo $(whoami)) should be rejected for command substitution
+	if entry.Segments[1].Approved {
+		t.Error("Expected second segment to be rejected")
+	}
+	if entry.Segments[1].Rejection == nil {
+		t.Fatal("Expected second segment to have rejection")
+	}
+	if entry.Segments[1].Rejection.Code != audit.CodeCommandSubstitution {
+		t.Errorf("Second segment Rejection.Code = %q, want %q", entry.Segments[1].Rejection.Code, audit.CodeCommandSubstitution)
+	}
+
+	// Third segment (ls -la) should still be approved
+	if !entry.Segments[2].Approved {
+		t.Error("Expected third segment (ls -la) to be approved")
+	}
+}
+
+func TestCommandSubstitutionOnlyInOneSegment(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "basic"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	// Only the segment with command substitution should be rejected
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "ls $(pwd)"}
+	}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if len(entry.Segments) != 1 {
+		t.Fatalf("Expected 1 segment, got %d", len(entry.Segments))
+	}
+
+	if entry.Segments[0].Rejection == nil {
+		t.Fatal("Expected segment to have rejection")
+	}
+	if entry.Segments[0].Rejection.Code != audit.CodeCommandSubstitution {
+		t.Errorf("Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeCommandSubstitution)
+	}
+}
