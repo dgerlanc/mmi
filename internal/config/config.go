@@ -98,7 +98,7 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 					if err != nil {
 						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 					}
-					result = append(result, patterns.Pattern{Regex: re, Name: patternName})
+					result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "simple", Pattern: pattern})
 				}
 			}
 
@@ -115,7 +115,7 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				if err != nil {
 					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 				}
-				result = append(result, patterns.Pattern{Regex: re, Name: cmd})
+				result = append(result, patterns.Pattern{Regex: re, Name: cmd, Type: "command", Pattern: pattern})
 			}
 
 		case "subcommand":
@@ -135,7 +135,7 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				if err != nil {
 					return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 				}
-				result = append(result, patterns.Pattern{Regex: re, Name: cmd})
+				result = append(result, patterns.Pattern{Regex: re, Name: cmd, Type: "subcommand", Pattern: pattern})
 			}
 
 		case "regex":
@@ -153,7 +153,7 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				if err != nil {
 					return nil, fmt.Errorf("invalid regex pattern %q: %w", pattern, err)
 				}
-				result = append(result, patterns.Pattern{Regex: re, Name: patternName})
+				result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "regex", Pattern: pattern})
 			}
 		}
 	}
@@ -314,7 +314,7 @@ func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
 					if err != nil {
 						return nil, fmt.Errorf("invalid deny pattern for command %q: %w", cmd, err)
 					}
-					result = append(result, patterns.Pattern{Regex: re, Name: name})
+					result = append(result, patterns.Pattern{Regex: re, Name: name, Type: "simple", Pattern: pattern})
 				}
 			}
 
@@ -334,7 +334,7 @@ func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
 				if err != nil {
 					return nil, fmt.Errorf("invalid deny regex pattern %q: %w", pattern, err)
 				}
-				result = append(result, patterns.Pattern{Regex: re, Name: patternName})
+				result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "regex", Pattern: pattern})
 			}
 		}
 	}
