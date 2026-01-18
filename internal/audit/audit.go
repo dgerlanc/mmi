@@ -24,7 +24,7 @@ type Entry struct {
 	Version    int       `json:"version"`
 	ToolUseID  string    `json:"tool_use_id"`
 	SessionID  string    `json:"session_id"`
-	Timestamp  time.Time `json:"timestamp"`
+	Timestamp  string    `json:"timestamp"`
 	DurationMs float64   `json:"duration_ms"`
 	Command    string    `json:"command"`
 	Approved   bool      `json:"approved"`
@@ -135,7 +135,8 @@ func Log(entry Entry) error {
 		return nil
 	}
 
-	entry.Timestamp = time.Now().UTC()
+	// Format timestamp with tenths of second precision (1 decimal place)
+	entry.Timestamp = time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00")
 
 	data, err := json.Marshal(entry)
 	if err != nil {

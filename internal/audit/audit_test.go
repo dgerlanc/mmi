@@ -133,8 +133,8 @@ func TestLog(t *testing.T) {
 	if len(parsed1.Segments) != 1 || parsed1.Segments[0].Match == nil || parsed1.Segments[0].Match.Name != "git" {
 		t.Errorf("First entry should have segment with match name 'git'")
 	}
-	if parsed1.Timestamp.IsZero() {
-		t.Error("First entry timestamp should not be zero")
+	if parsed1.Timestamp == "" {
+		t.Error("First entry timestamp should not be empty")
 	}
 
 	// Verify second entry
@@ -205,7 +205,7 @@ func TestEntrySerializationAllFields(t *testing.T) {
 		Version:    1,
 		ToolUseID:  "tool-123",
 		SessionID:  "session-456",
-		Timestamp:  time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
+		Timestamp:  "2025-01-15T10:30:00.0Z",
 		DurationMs: 42.5,
 		Command:    "git status && ls -la",
 		Approved:   true,
@@ -260,7 +260,7 @@ func TestEntrySerializationOmitEmpty(t *testing.T) {
 		Version:   1,
 		ToolUseID: "tool-123",
 		SessionID: "session-456",
-		Timestamp: time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
+		Timestamp: "2025-01-15T10:30:00.0Z",
 		Command:   "ls",
 		Approved:  true,
 		Cwd:       "/home",
@@ -283,7 +283,7 @@ func TestEntrySingleSegment(t *testing.T) {
 		Version:   1,
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00"),
 		Command:   "git status",
 		Approved:  true,
 		Segments: []Segment{
@@ -312,7 +312,7 @@ func TestEntryMultipleSegments(t *testing.T) {
 		Version:   1,
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00"),
 		Command:   "git status && ls && pwd",
 		Approved:  true,
 		Segments: []Segment{
@@ -343,7 +343,7 @@ func TestEntryApprovedWhenAllSegmentsApproved(t *testing.T) {
 		Version:   1,
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00"),
 		Command:   "git status && ls",
 		Approved:  true,
 		Segments: []Segment{
@@ -363,7 +363,7 @@ func TestEntryRejectedWhenAnySegmentRejected(t *testing.T) {
 		Version:   1,
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00"),
 		Command:   "git status && curl http://evil.com",
 		Approved:  false,
 		Segments: []Segment{
@@ -613,7 +613,7 @@ func TestVersionFieldAlwaysPresent(t *testing.T) {
 		Version:   0, // Even when 0
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00"),
 		Command:   "ls",
 		Approved:  true,
 		Cwd:       "/home",
@@ -630,13 +630,12 @@ func TestVersionFieldAlwaysPresent(t *testing.T) {
 	}
 }
 
-func TestTimestampSerializesRFC3339(t *testing.T) {
-	ts := time.Date(2025, 1, 15, 10, 30, 45, 0, time.UTC)
+func TestTimestampSerializesTenthsOfSecond(t *testing.T) {
 	entry := Entry{
 		Version:   1,
 		ToolUseID: "tool-1",
 		SessionID: "session-1",
-		Timestamp: ts,
+		Timestamp: "2025-01-15T10:30:45.1Z",
 		Command:   "ls",
 		Approved:  true,
 		Cwd:       "/home",
@@ -648,9 +647,9 @@ func TestTimestampSerializesRFC3339(t *testing.T) {
 	}
 
 	jsonStr := string(data)
-	// RFC3339 format should be: 2025-01-15T10:30:45Z
-	if !strings.Contains(jsonStr, "2025-01-15T10:30:45Z") {
-		t.Errorf("Timestamp should be RFC3339 format, got: %s", jsonStr)
+	// Timestamp should have tenths of second precision: 2025-01-15T10:30:45.1Z
+	if !strings.Contains(jsonStr, "2025-01-15T10:30:45.1Z") {
+		t.Errorf("Timestamp should have tenths of second precision, got: %s", jsonStr)
 	}
 }
 
@@ -699,9 +698,20 @@ func TestLogAutoPopulatesTimestamp(t *testing.T) {
 		t.Fatalf("Failed to parse entry: %v", err)
 	}
 
+	// Timestamp should be a non-empty string in the expected format
+	if parsed.Timestamp == "" {
+		t.Error("Timestamp should not be empty")
+	}
+
+	// Parse the timestamp to verify it's within range
+	parsedTime, err := time.Parse("2006-01-02T15:04:05.0Z07:00", parsed.Timestamp)
+	if err != nil {
+		t.Fatalf("Failed to parse timestamp %q: %v", parsed.Timestamp, err)
+	}
+
 	// Timestamp should be between beforeLog and afterLog
-	if parsed.Timestamp.Before(beforeLog) || parsed.Timestamp.After(afterLog) {
-		t.Errorf("Timestamp %v not within expected range [%v, %v]", parsed.Timestamp, beforeLog, afterLog)
+	if parsedTime.Before(beforeLog.Truncate(100*time.Millisecond)) || parsedTime.After(afterLog.Add(100*time.Millisecond)) {
+		t.Errorf("Timestamp %v not within expected range [%v, %v]", parsedTime, beforeLog, afterLog)
 	}
 }
 
