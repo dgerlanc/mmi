@@ -118,14 +118,40 @@ type SpecificOutput struct {
 }
 ```
 
-### 3.4 Audit Entry
+### 3.4 Audit Entry (v1)
 
 ```go
 type Entry struct {
-    Timestamp time.Time // UTC timestamp
-    Command   string    // The command evaluated
-    Approved  bool      // Approval result
-    Reason    string    // Pattern name or deny reason
+    Version    int       `json:"version"`
+    ToolUseID  string    `json:"tool_use_id"`
+    SessionID  string    `json:"session_id"`
+    Timestamp  time.Time `json:"timestamp"`
+    DurationMs float64   `json:"duration_ms"`
+    Command    string    `json:"command"`
+    Approved   bool      `json:"approved"`
+    Segments   []Segment `json:"segments"`
+    Cwd        string    `json:"cwd"`
+}
+
+type Segment struct {
+    Command   string     `json:"command"`
+    Approved  bool       `json:"approved"`
+    Wrappers  []string   `json:"wrappers,omitempty"`
+    Match     *Match     `json:"match,omitempty"`
+    Rejection *Rejection `json:"rejection,omitempty"`
+}
+
+type Match struct {
+    Type    string `json:"type"`
+    Pattern string `json:"pattern,omitempty"`
+    Name    string `json:"name"`
+}
+
+type Rejection struct {
+    Code    string `json:"code"`
+    Name    string `json:"name,omitempty"`
+    Pattern string `json:"pattern,omitempty"`
+    Detail  string `json:"detail,omitempty"`
 }
 ```
 
@@ -378,22 +404,95 @@ Note: `description` and `timeout` in `tool_input` are optional; all other fields
 
 `~/.local/share/mmi/audit.log`
 
-### 8.2 Format
+### 8.2 Format (v1)
 
 JSON-lines (one JSON object per line):
 ```json
-{"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git"}
-{"timestamp":"2025-01-15T10:30:05Z","command":"sudo rm -rf /","approved":false,"reason":"privilege escalation"}
+{
+  "version": 1,
+  "tool_use_id": "tool-abc123",
+  "session_id": "session-xyz789",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "duration_ms": 1.25,
+  "command": "sudo git status && ls",
+  "approved": true,
+  "segments": [
+    {
+      "command": "sudo git status",
+      "approved": true,
+      "wrappers": ["sudo"],
+      "match": {"type": "subcommand", "pattern": "^git\\s+(status|log)\\b", "name": "git"}
+    },
+    {
+      "command": "ls",
+      "approved": true,
+      "match": {"type": "simple", "pattern": "^ls\\b", "name": "ls"}
+    }
+  ],
+  "cwd": "/home/user/project"
+}
 ```
 
 ### 8.3 Fields
 
 | Field | Description |
 |-------|-------------|
-| `timestamp` | UTC timestamp |
-| `command` | The command evaluated |
+| `version` | Log format version (currently 1) |
+| `tool_use_id` | Claude Code tool use ID |
+| `session_id` | Claude Code session ID |
+| `timestamp` | UTC timestamp (RFC3339) |
+| `duration_ms` | Processing time in milliseconds |
+| `command` | The full command evaluated |
 | `approved` | Boolean approval result |
-| `reason` | Pattern name (approved) or deny reason (rejected) |
+| `segments` | Array of segment details |
+| `cwd` | Current working directory |
+
+### 8.4 Segment Fields
+
+| Field | Description |
+|-------|-------------|
+| `command` | Individual command segment |
+| `approved` | Boolean approval for this segment |
+| `wrappers` | Array of wrapper names stripped (omitted if empty) |
+| `match` | Match details (present if approved) |
+| `rejection` | Rejection details (present if rejected) |
+
+### 8.5 Match Fields
+
+| Field | Description |
+|-------|-------------|
+| `type` | Pattern type: `simple`, `subcommand`, `command`, `regex` |
+| `pattern` | Regex pattern that matched (may be omitted) |
+| `name` | Pattern name from config |
+
+### 8.6 Rejection Fields
+
+| Field | Description |
+|-------|-------------|
+| `code` | One of: `COMMAND_SUBSTITUTION`, `UNPARSEABLE`, `DENY_MATCH`, `NO_MATCH` |
+| `name` | Deny pattern name (DENY_MATCH only) |
+| `pattern` | Pattern that triggered rejection (COMMAND_SUBSTITUTION, DENY_MATCH) |
+| `detail` | Error details (UNPARSEABLE only) |
+
+### 8.7 Rejection Codes
+
+| Code | Description | When Used |
+|------|-------------|-----------|
+| `COMMAND_SUBSTITUTION` | Command substitution detected | `$(...)` or backticks outside quoted heredocs |
+| `UNPARSEABLE` | Shell syntax error | Incomplete syntax, unclosed quotes |
+| `DENY_MATCH` | Matched deny pattern | Command matches a deny list pattern |
+| `NO_MATCH` | No safe pattern matched | Command not in allowlist |
+
+### 8.8 Migration from v0
+
+Logs from earlier versions (implicit v0) do not have a `version` field and use a simpler format:
+```json
+{"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git"}
+```
+
+When parsing logs, check for the `version` field to determine format:
+- No `version` field: v0 format
+- `version: 1`: v1 format with segments
 
 ---
 

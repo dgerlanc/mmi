@@ -11,12 +11,49 @@ import (
 	"github.com/dgerlanc/mmi/internal/logger"
 )
 
-// Entry represents a single audit log entry.
+// Rejection codes
+const (
+	CodeCommandSubstitution = "COMMAND_SUBSTITUTION"
+	CodeUnparseable         = "UNPARSEABLE"
+	CodeDenyMatch           = "DENY_MATCH"
+	CodeNoMatch             = "NO_MATCH"
+)
+
+// Entry represents a single audit log entry (v1 format).
 type Entry struct {
-	Timestamp time.Time `json:"timestamp"`
-	Command   string    `json:"command"`
-	Approved  bool      `json:"approved"`
-	Reason    string    `json:"reason,omitempty"`
+	Version    int       `json:"version"`
+	ToolUseID  string    `json:"tool_use_id"`
+	SessionID  string    `json:"session_id"`
+	Timestamp  time.Time `json:"timestamp"`
+	DurationMs float64   `json:"duration_ms"`
+	Command    string    `json:"command"`
+	Approved   bool      `json:"approved"`
+	Segments   []Segment `json:"segments"`
+	Cwd        string    `json:"cwd"`
+}
+
+// Segment represents a single command segment within a chained command.
+type Segment struct {
+	Command   string     `json:"command"`
+	Approved  bool       `json:"approved"`
+	Wrappers  []string   `json:"wrappers,omitempty"`
+	Match     *Match     `json:"match,omitempty"`
+	Rejection *Rejection `json:"rejection,omitempty"`
+}
+
+// Match contains information about the pattern that matched a command.
+type Match struct {
+	Type    string `json:"type"`
+	Pattern string `json:"pattern,omitempty"`
+	Name    string `json:"name"`
+}
+
+// Rejection contains information about why a command was rejected.
+type Rejection struct {
+	Code    string `json:"code"`
+	Name    string `json:"name,omitempty"`
+	Pattern string `json:"pattern,omitempty"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 var (

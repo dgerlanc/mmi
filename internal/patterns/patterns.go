@@ -9,8 +9,10 @@ import (
 
 // Pattern holds a compiled regex and its description.
 type Pattern struct {
-	Regex *regexp.Regexp
-	Name  string
+	Regex   *regexp.Regexp
+	Name    string
+	Type    string // simple, subcommand, command, regex
+	Pattern string // original pattern string
 }
 
 // BuildFlagPattern converts a flag specification to a regex pattern.
