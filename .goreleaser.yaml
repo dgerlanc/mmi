@@ -50,6 +50,7 @@ snapshot:
 
 changelog:
   sort: asc
+  format: "[{{ .ShortSHA }}](https://github.com/dgerlanc/mmi/commit/{{ .SHA }}) {{ .Title }}"
   filters:
     exclude:
       - "^docs:"
@@ -71,7 +72,7 @@ release:
 
     Mother May I? - Claude Code Bash command approval hook
   footer: |
-    **Full Changelog**: https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }})
 
 # homebrew_casks:
 #   - name: mmi
