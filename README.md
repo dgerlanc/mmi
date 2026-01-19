@@ -6,7 +6,9 @@ A CLI utility that acts as a PreToolUse Hook for Claude Code, providing intellig
 
 ## Overview
 
-MMI parses Bash commands and automatically approves those that are known to be safe, eliminating the need for manual approval on every command. This significantly speeds up development workflows while maintaining security through a configurable allowlist approach.
+MMI parses Bash commands and automatically approves those that the user specifies as safe, eliminating the need for manual approval on every command. This significantly speeds up development workflows while maintaining security through a configurable deny/allowlist approach.
+
+**Important:** Allowing an LLM to execute arbitrary Bash commands in a non-sandboxed environment is inherently unsafe. MMI may reduce that risk but cannot guarantee safety! Use at your own risk and always review your configuration carefully.
 
 The name "Mother May I?" references the childhood game where permission must be granted before taking action.
 
