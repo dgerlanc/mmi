@@ -179,15 +179,16 @@ mmi completion powershell > mmi.ps1
 
 When a command is submitted, `mmi`:
 
-1. Checks for dangerous patterns (command substitution `$()` or backticks)
-2. Checks if the command matches any deny patterns
-3. Splits command chains (handling `&&`, `||`, `|`, `;`, `&`)
-4. For each segment:
+1. Parses and splits command chains (handling `&&`, `||`, `|`, `;`, `&`)
+   - Unparseable commands (incomplete syntax, unclosed quotes) are rejected
+2. For each segment:
+   - Checks for dangerous patterns (command substitution `$()` or backticks)
    - Checks deny list
    - Strips safe wrappers
    - Checks deny list again on core command
    - Checks if core command matches safe patterns
-5. Approves only if ALL segments pass all checks
+3. Approves only if ALL segments pass all checks
+4. Logs all segments to audit trail (all segments are evaluated even if earlier ones fail)
 
 ## Default Approved Commands
 
@@ -244,8 +245,9 @@ Disable with `--no-audit-log`.
 - Deny patterns are checked first and override all approvals
 - Unrecognized commands are automatically rejected
 - Unparseable commands (incomplete syntax, unclosed quotes) are rejected
-- Command substitution (`$(...)` and backticks) is always rejected
+- Command substitution (`$(...)` and backticks) is always rejected (except in quoted heredocs)
 - Command chains are only approved if ALL segments are safe
+- All segments are evaluated and logged even if earlier segments fail
 - Only explicitly allowlisted patterns are allowed
 - Shell loops (`while`, `for`) must be complete; their inner commands are extracted and validated individually
 
@@ -292,7 +294,14 @@ If no configuration file exists at `~/.config/mmi/config.toml` (or the path spec
 
 ### Why are command substitutions (`$(...)` and backticks) always rejected?
 
-Command substitution can execute arbitrary commands inside what appears to be a safe command. For example, `echo $(rm -rf /)` looks like an echo command but actually deletes files. `mmi` rejects both `$(...)` and backtick syntaxes unconditionally for security.
+Command substitution can execute arbitrary commands inside what appears to be a safe command. For example, `echo $(rm -rf /)` looks like an echo command but actually deletes files. `mmi` rejects both `$(...)` and backtick syntaxes for security.
+
+**Exception**: Content inside quoted heredocs (single or double quoted delimiters) is treated as literal text and won't trigger rejection:
+```bash
+cat > file.go << 'EOF'
+fmt.Printf(`template`)  # Allowed - quoted heredoc
+EOF
+```
 
 ### How do I test if a command will be approved?
 
@@ -314,7 +323,7 @@ Audit logs are written to `~/.local/share/mmi/audit.log` in JSON-lines format. E
 
 Common causes:
 - **Deny list priority**: Deny patterns are checked first and override all approvals
-- **Command substitution**: Commands containing `$(...)` or backticks are always rejected
+- **Command substitution**: Commands containing `$(...)` or backticks are rejected (except in quoted heredocs)
 - **Command chains**: If using `&&`, `||`, `|`, or `;`, all segments must be approved
 - **Pattern mismatch**: Use `mmi validate` to verify your patterns and `--verbose` to see why rejection occurred
 
