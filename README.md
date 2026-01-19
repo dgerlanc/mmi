@@ -231,14 +231,84 @@ Copy from `examples/` to enable language-specific commands:
 
 ## Audit Logging
 
-`mmi` logs all approval decisions to `~/.local/share/mmi/audit.log` in JSON-lines format:
+`mmi` logs all approval decisions to `~/.local/share/mmi/audit.log` in JSON-lines format. Disable with `--no-audit-log`.
 
+<details>
+<summary>Example audit log entries</summary>
+
+**Approved command:**
 ```json
-{"timestamp":"2025-01-15T10:30:00Z","command":"git status","approved":true,"reason":"git"}
-{"timestamp":"2025-01-15T10:30:05Z","command":"sudo rm -rf /","approved":false}
+{
+  "version": 1,
+  "tool_use_id": "toolu_abc123",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-01-15T10:30:00.5Z",
+  "duration_ms": 0.42,
+  "command": "git status",
+  "approved": true,
+  "segments": [
+    {
+      "command": "git status",
+      "approved": true,
+      "match": {
+        "type": "subcommand",
+        "name": "git"
+      }
+    }
+  ],
+  "cwd": "/home/user/project"
+}
 ```
 
-Disable with `--no-audit-log`.
+**Rejected command (deny match):**
+```json
+{
+  "version": 1,
+  "tool_use_id": "toolu_def456",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-01-15T10:30:05.1Z",
+  "duration_ms": 0.38,
+  "command": "rm -rf /",
+  "approved": false,
+  "segments": [
+    {
+      "command": "rm -rf /",
+      "approved": false,
+      "rejection": {
+        "code": "DENY_MATCH",
+        "name": "rm root",
+        "pattern": "rm\\s+(-[rRfF]+\\s+)*/"
+      }
+    }
+  ],
+  "cwd": "/home/user/project"
+}
+```
+
+</details>
+
+<details>
+<summary>Audit log field reference</summary>
+
+| Field | Description |
+|-------|-------------|
+| `version` | Log format version (currently 1) |
+| `tool_use_id` | Claude Code tool use identifier |
+| `session_id` | Claude Code session identifier |
+| `timestamp` | UTC timestamp with tenths of second precision |
+| `duration_ms` | Processing time in milliseconds |
+| `command` | The full command that was evaluated |
+| `approved` | Whether the command was approved |
+| `segments` | Array of individual command segments (for chained commands) |
+| `cwd` | Working directory |
+
+**Segment fields:**
+| Field | Description |
+|-------|-------------|
+| `match` | Present when approved; contains `type`, `pattern`, and `name` |
+| `rejection` | Present when rejected; contains `code` and optionally `name`, `pattern`, `detail` |
+
+</details>
 
 ## Security Model
 
@@ -319,7 +389,7 @@ Wrappers are safe prefixes that are stripped before checking the core command. F
 
 ### Where are approval decisions logged?
 
-Audit logs are written to `~/.local/share/mmi/audit.log` in JSON-lines format. Each entry includes the timestamp, command, approval status, and the pattern name that matched (if approved). Disable logging with `--no-audit-log`.
+Audit logs are written to `~/.local/share/mmi/audit.log` in JSON-lines format. Each entry includes metadata (version, session/tool IDs, timestamp, duration), the command, approval status, detailed segment information with match or rejection details, and the working directory. Disable logging with `--no-audit-log`.
 
 ### Why is my command rejected even though I added it to my config?
 
