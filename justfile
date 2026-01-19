@@ -123,3 +123,7 @@ release-dry-run version:
     @echo "Would create tag: v{{version}}"
     @echo "Would push to origin"
     @echo "=== DRY RUN COMPLETE ==="
+
+# Verify documentation is in sync with code
+verify-docs:
+    claude -p /verify-docs

@@ -1,0 +1,204 @@
+name: Documentation Check
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  docs-check:
+    name: Verify Documentation
+    runs-on: ubuntu-latest
+    # Only run if ANTHROPIC_API_KEY is configured
+    if: ${{ vars.DOCS_CHECK_ENABLED == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, compare against base branch
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | tr '\n' ' ')
+          else
+            # For pushes, compare against previous commit
+            FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | tr '\n' ' ' || echo "")
+          fi
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+          # Check if any relevant files changed
+          RELEVANT=false
+          for f in $FILES; do
+            case "$f" in
+              *.go|README.md|docs/*.md)
+                RELEVANT=true
+                break
+                ;;
+            esac
+          done
+          echo "relevant=$RELEVANT" >> $GITHUB_OUTPUT
+
+      - name: Check documentation sync
+        if: steps.changed.outputs.relevant == 'true'
+        id: check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Read documentation files
+          README=$(cat README.md)
+          SPEC=$(cat docs/SPEC.md)
+          PATTERNS=$(cat docs/PATTERNS.md)
+
+          # Read key code files
+          HOOK_GO=$(cat internal/hook/hook.go)
+          CONFIG_GO=$(cat internal/config/config.go)
+          ROOT_GO=$(cat cmd/root.go)
+          CHECK_GO=$(cat cmd/check.go)
+
+          # Build the prompt
+          PROMPT=$(cat <<'PROMPT_EOF'
+          You are reviewing documentation for a Go project called mmi (may-i).
+
+          Compare the documentation against the code and identify any inconsistencies.
+
+          Focus on:
+          1. Approval algorithm steps (README "How It Works" vs docs/SPEC.md Section 4 vs hook.go Process function)
+          2. CLI commands and flags (README vs cmd/*.go)
+          3. Configuration structure and defaults (README vs config.go)
+          4. Pattern syntax (docs/PATTERNS.md vs implementation)
+
+          Changed files in this PR: ${{ steps.changed.outputs.files }}
+
+          Respond with a concise summary:
+          - List any inconsistencies found with specific locations
+          - Note if documentation needs updating
+          - If everything is in sync, say so briefly
+
+          Keep your response under 500 words. Focus on actionable issues.
+          PROMPT_EOF
+          )
+
+          # Create the API request
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$(jq -n \
+              --arg readme "$README" \
+              --arg spec "$SPEC" \
+              --arg patterns "$PATTERNS" \
+              --arg hook "$HOOK_GO" \
+              --arg config "$CONFIG_GO" \
+              --arg root "$ROOT_GO" \
+              --arg check "$CHECK_GO" \
+              --arg prompt "$PROMPT" \
+              '{
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1024,
+                messages: [{
+                  role: "user",
+                  content: ($prompt + "\n\n## README.md\n" + $readme + "\n\n## docs/SPEC.md\n" + $spec + "\n\n## docs/PATTERNS.md\n" + $patterns + "\n\n## internal/hook/hook.go\n" + $hook + "\n\n## internal/config/config.go\n" + $config + "\n\n## cmd/root.go\n" + $root + "\n\n## cmd/check.go\n" + $check)
+                }]
+              }')")
+
+          # Extract the response text
+          RESULT=$(echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "Failed to get response"')
+
+          # Save for later steps
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Check if issues were found (heuristic: look for words indicating problems)
+          if echo "$RESULT" | grep -qiE "(inconsisten|mismatch|outdated|incorrect|missing|discrepanc|should be updated|needs updating)"; then
+            echo "has_issues=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_issues=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.changed.outputs.relevant == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const result = `${{ steps.check.outputs.result }}`;
+            const hasIssues = '${{ steps.check.outputs.has_issues }}' === 'true';
+
+            const body = `## Documentation Check ${hasIssues ? '⚠️' : '✅'}
+
+            ${result}
+
+            ---
+            *This is an advisory check. It does not block merging.*`;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('## Documentation Check')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+      - name: Add label if issues found
+        if: github.event_name == 'pull_request' && steps.check.outputs.has_issues == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create label if it doesn't exist
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'docs-review-needed',
+                color: 'fbca04',
+                description: 'Documentation may need updates'
+              });
+            } catch (e) {
+              // Label already exists, ignore
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['docs-review-needed']
+            });
+
+      - name: Remove label if no issues
+        if: github.event_name == 'pull_request' && steps.check.outputs.has_issues == 'false' && steps.changed.outputs.relevant == 'true'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              name: 'docs-review-needed'
+            });
