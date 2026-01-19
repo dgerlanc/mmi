@@ -10,6 +10,8 @@ MMI parses Bash commands and automatically approves those that are known to be s
 
 The name "Mother May I?" references the childhood game where permission must be granted before taking action.
 
+This project was inspired by this [post](https://matthewrocklin.com/ai-zealotry/#appendix-permissions-file) by Matt Rocklin.
+
 ## Installation
 
 ### From Source
