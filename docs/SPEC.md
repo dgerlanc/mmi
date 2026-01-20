@@ -331,6 +331,8 @@ name = "shell builtin"
 | Flag | Description |
 |------|-------------|
 | `-f, --force` | Overwrite existing config file |
+| `--config-only` | Only write config.toml, skip Claude settings configuration |
+| `--claude-settings` | Path to Claude settings.json (default: ~/.claude/settings.json) |
 
 ---
 
@@ -338,7 +340,8 @@ name = "shell builtin"
 
 ### 7.1 Hook Configuration
 
-Add to `~/.claude/settings.json`:
+Running `mmi init` automatically configures Claude Code's `~/.claude/settings.json` to add the mmi hook. The configuration added:
+
 ```json
 {
   "hooks": {
@@ -352,6 +355,13 @@ Add to `~/.claude/settings.json`:
   }
 }
 ```
+
+**Automatic configuration behavior:**
+- Preserves all existing settings in `settings.json`
+- Creates `~/.claude/` directory if it doesn't exist
+- Skips configuration if mmi hook is already present
+- Use `--config-only` to skip this step
+- Use `--claude-settings` to specify a custom settings.json path
 
 ### 7.2 Hook Protocol
 

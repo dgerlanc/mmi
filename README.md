@@ -36,15 +36,18 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [Releases]
 ## Quick Start
 
 1. Install `mmi` (see above)
-2. Run `mmi init` to create a default configuration file
-3. Add `mmi` as a hook in your Claude Code settings
-4. (Optional) Include an example config for your language stack (see [Example Configurations](#example-configurations))
+2. Run `mmi init` to create the configuration and set up the Claude Code hook
+3. (Optional) Include an example config for your language stack (see [Example Configurations](#example-configurations))
+
+The `mmi init` command automatically:
+- Creates a default configuration file at `~/.config/mmi/config.toml`
+- Configures Claude Code's `~/.claude/settings.json` to use mmi as a PreToolUse hook
 
 ## Configuration
 
 ### Claude Code Hook Setup
 
-Add `mmi` as a PreToolUse hook in your Claude Code settings (`~/.claude/settings.json`):
+Running `mmi init` automatically configures Claude Code's `~/.claude/settings.json` with the mmi hook. If you need to configure it manually, add this to your settings:
 
 ```json
 {
@@ -130,12 +133,20 @@ Run as a hook - reads JSON from stdin, outputs approval JSON to stdout.
 
 ### `mmi init`
 
-Create a default configuration file:
+Create the configuration file and set up the Claude Code hook:
 
 ```bash
-mmi init
-mmi init --force  # Overwrite existing config
+mmi init              # Create config and configure Claude Code
+mmi init --force      # Overwrite existing config
+mmi init --config-only  # Only create config.toml, skip Claude settings
+mmi init --claude-settings /path/to/settings.json  # Use custom settings path
 ```
+
+This command:
+- Creates `~/.config/mmi/config.toml` with default settings
+- Configures `~/.claude/settings.json` to add the mmi PreToolUse hook
+- Preserves existing settings in both files
+- Skips hook configuration if already present
 
 The default config includes basic Unix utilities and shell builtins. For language-specific commands (Python, Node.js, Rust), copy an example config from `examples/`.
 
