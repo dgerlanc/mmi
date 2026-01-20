@@ -136,17 +136,18 @@ Run as a hook - reads JSON from stdin, outputs approval JSON to stdout.
 Create the configuration file and set up the Claude Code hook:
 
 ```bash
-mmi init              # Create config and configure Claude Code
-mmi init --force      # Overwrite existing config
+mmi init              # Create config (if needed) and configure Claude Code
+mmi init --force      # Overwrite existing config and configure Claude Code
 mmi init --config-only  # Only create config.toml, skip Claude settings
 mmi init --claude-settings /path/to/settings.json  # Use custom settings path
 ```
 
-This command:
-- Creates `~/.config/mmi/config.toml` with default settings
-- Configures `~/.claude/settings.json` to add the mmi PreToolUse hook
-- Preserves existing settings in both files
-- Skips hook configuration if already present
+**Behavior:**
+- If the config file doesn't exist or `--force` is used, it creates/overwrites `~/.config/mmi/config.toml`
+- If the config file exists and `--force` is not set, it prints a notice but continues
+- Unless `--config-only` is set, it always configures Claude Code's settings.json (if not already configured)
+
+This allows you to reconfigure Claude Code hooks without needing to use `--force`, which would unnecessarily overwrite your config file.
 
 The default config includes basic Unix utilities and shell builtins. For language-specific commands (Python, Node.js, Rust), copy an example config from `examples/`.
 
@@ -411,6 +412,10 @@ Common causes:
 - **Command substitution**: Commands containing `$(...)` or backticks are rejected (except in quoted heredocs)
 - **Command chains**: If using `&&`, `||`, `|`, or `;`, all segments must be approved
 - **Pattern mismatch**: Use `mmi validate` to verify your patterns and `--verbose` to see why rejection occurred
+
+### Can I reconfigure Claude Code hooks without overwriting my config?
+
+Yes! Simply run `mmi init` again. If your config file already exists, it will print a notice and skip writing the config file, but will still configure Claude Code's settings.json (unless `--config-only` is set or the hook is already configured). Use `--force` only if you want to overwrite your config file.
 
 ## Testing
 

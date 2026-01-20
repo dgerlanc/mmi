@@ -314,7 +314,7 @@ name = "shell builtin"
 | Command | Description |
 |---------|-------------|
 | `mmi` (default) | Process hook input from stdin, output decision to stdout |
-| `mmi init` | Create default config file |
+| `mmi init` | Create default config file and configure Claude Code settings |
 | `mmi validate` | Display compiled patterns from config |
 | `mmi completion` | Generate shell completions (bash, zsh, fish, powershell) |
 
@@ -333,6 +333,24 @@ name = "shell builtin"
 | `-f, --force` | Overwrite existing config file |
 | `--config-only` | Only write config.toml, skip Claude settings configuration |
 | `--claude-settings` | Path to Claude settings.json (default: ~/.claude/settings.json) |
+
+### 6.4 Init Command Behavior
+
+The `mmi init` command handles two separate tasks:
+1. Config file creation
+2. Claude Code settings configuration
+
+**Config file behavior:**
+- If config doesn't exist or `--force` is set: creates/overwrites config file
+- If config exists and `--force` is not set: prints notice and skips writing
+
+**Claude settings behavior:**
+- Always runs unless `--config-only` is set
+- Checks if mmi hook is already present
+- If not present: adds hook to settings.json
+- If already present: prints notice and skips
+
+This separation allows users to reconfigure Claude Code hooks without needing `--force`, which would unnecessarily overwrite their config file.
 
 ---
 
@@ -360,7 +378,7 @@ Running `mmi init` automatically configures Claude Code's `~/.claude/settings.js
 - Preserves all existing settings in `settings.json`
 - Creates `~/.claude/` directory if it doesn't exist
 - Skips configuration if mmi hook is already present
-- Use `--config-only` to skip this step
+- Runs independently of config file creation (unless `--config-only` is set)
 - Use `--claude-settings` to specify a custom settings.json path
 
 ### 7.2 Hook Protocol
