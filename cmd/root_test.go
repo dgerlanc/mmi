@@ -14,6 +14,7 @@ func resetGlobalState() {
 	verbose = false
 	dryRun = false
 	noAuditLog = false
+	initClaudeSettings = ""
 	config.Reset()
 }
 
