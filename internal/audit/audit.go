@@ -31,6 +31,7 @@ type Entry struct {
 	Segments   []Segment `json:"segments"`
 	Cwd        string    `json:"cwd"`
 	Input      string    `json:"input"`
+	Output     string    `json:"output"`
 }
 
 // Segment represents a single command segment within a chained command.

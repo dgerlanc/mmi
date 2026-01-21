@@ -919,3 +919,101 @@ func TestLogWritesInputField(t *testing.T) {
 		t.Errorf("Input = %q, want %q", parsed.Input, rawInput)
 	}
 }
+
+func TestEntryOutputFieldSerialization(t *testing.T) {
+	rawOutput := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"git"}}`
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-123",
+		SessionID: "session-456",
+		Timestamp: "2025-01-15T10:30:00.0Z",
+		Command:   "git status",
+		Approved:  true,
+		Cwd:       "/home",
+		Output:    rawOutput,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if parsed.Output != rawOutput {
+		t.Errorf("Output = %q, want %q", parsed.Output, rawOutput)
+	}
+}
+
+func TestEntryOutputFieldInJSON(t *testing.T) {
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-123",
+		SessionID: "session-456",
+		Timestamp: "2025-01-15T10:30:00.0Z",
+		Command:   "ls",
+		Approved:  true,
+		Cwd:       "/home",
+		Output:    `{"test":"value"}`,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, `"output"`) {
+		t.Error("Expected output field to be present in JSON")
+	}
+}
+
+func TestLogWritesOutputField(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	if err := Init(logPath, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	rawOutput := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"git"}}`
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-xyz",
+		SessionID: "sess-abc",
+		Command:   "git status",
+		Approved:  true,
+		Cwd:       "/home/user",
+		Output:    rawOutput,
+	}
+
+	if err := Log(entry); err != nil {
+		t.Errorf("Log() error = %v", err)
+	}
+
+	Close()
+
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(content[:len(content)-1], &parsed); err != nil {
+		t.Fatalf("Failed to parse entry: %v", err)
+	}
+
+	if parsed.Output != rawOutput {
+		t.Errorf("Output = %q, want %q", parsed.Output, rawOutput)
+	}
+}

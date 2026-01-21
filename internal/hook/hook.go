@@ -21,6 +21,7 @@ type Result struct {
 	Command  string // The command that was processed
 	Approved bool   // Whether the command was approved
 	Reason   string // The reason for approval/denial
+	Output   string // The JSON output sent to Claude Code
 }
 
 // ToolInputData represents the tool_input field in the Claude Code hook input
@@ -162,19 +163,22 @@ func ProcessWithResult(r io.Reader) Result {
 	rawBytes, err := io.ReadAll(r)
 	if err != nil {
 		logger.Debug("failed to read input", "error", err)
-		return Result{}
+		output := FormatAsk("failed to read input")
+		return Result{Output: output}
 	}
 	rawInput := string(rawBytes)
 
 	var input Input
 	if err := json.Unmarshal(rawBytes, &input); err != nil {
 		logger.Debug("failed to decode input", "error", err)
-		return Result{}
+		output := FormatAsk("invalid input")
+		return Result{Output: output}
 	}
 
 	if input.ToolName != "Bash" {
 		logger.Debug("not a Bash command", "tool", input.ToolName)
-		return Result{}
+		output := FormatAsk("not a Bash command")
+		return Result{Output: output}
 	}
 
 	cmd := input.ToolInput.Command
@@ -191,8 +195,9 @@ func ProcessWithResult(r io.Reader) Result {
 			Approved:  false,
 			Rejection: &audit.Rejection{Code: audit.CodeUnparseable, Detail: "parse error"},
 		}}
-		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
-		return Result{Command: cmd, Approved: false, Reason: "unparseable command"}
+		output := FormatAsk("unparseable command")
+		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+		return Result{Command: cmd, Approved: false, Reason: "unparseable command", Output: output}
 	}
 	logger.Debug("split command chain", "segments", len(cmdSegments))
 
@@ -281,13 +286,15 @@ func ProcessWithResult(r io.Reader) Result {
 	// Log and return based on overall result
 	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
 	if !overallApproved {
-		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
-		return Result{Command: cmd, Approved: false}
+		output := FormatAsk("command not in allow list")
+		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+		return Result{Command: cmd, Approved: false, Output: output}
 	}
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
-	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
-	return Result{Command: cmd, Approved: true, Reason: reason}
+	output := FormatApproval(reason)
+	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+	return Result{Command: cmd, Approved: true, Reason: reason, Output: output}
 }
 
 // CheckDeny checks if a command matches any deny pattern.
@@ -346,7 +353,7 @@ func CheckDenyWithResult(cmd string, denyPatterns []patterns.Pattern) DenyResult
 }
 
 // logAudit logs a command decision to the audit log.
-func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput string) {
+func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput string) {
 	audit.Log(audit.Entry{
 		Version:    1,
 		SessionID:  sessionID,
@@ -357,10 +364,11 @@ func logAudit(command string, approved bool, segments []audit.Segment, durationM
 		DurationMs: durationMs,
 		Cwd:        cwd,
 		Input:      rawInput,
+		Output:     rawOutput,
 	})
 }
 
-// FormatApproval returns the JSON approval output with a trailing newline
+// FormatApproval returns the JSON approval output
 func FormatApproval(reason string) string {
 	output := Output{
 		HookSpecificOutput: SpecificOutput{
@@ -370,10 +378,10 @@ func FormatApproval(reason string) string {
 		},
 	}
 	data, _ := json.Marshal(output)
-	return string(data) + "\n"
+	return string(data)
 }
 
-// FormatAsk returns the JSON ask output with a trailing newline
+// FormatAsk returns the JSON ask output
 func FormatAsk(reason string) string {
 	output := Output{
 		HookSpecificOutput: SpecificOutput{
@@ -383,7 +391,7 @@ func FormatAsk(reason string) string {
 		},
 	}
 	data, _ := json.Marshal(output)
-	return string(data) + "\n"
+	return string(data)
 }
 
 // ErrUnparseable is returned when a command cannot be parsed.

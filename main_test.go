@@ -166,12 +166,8 @@ func TestProcess(t *testing.T) {
 func TestFormatApproval(t *testing.T) {
 	result := hook.FormatApproval("test reason")
 
-	if !strings.HasSuffix(result, "\n") {
-		t.Error("FormatApproval() should end with newline")
-	}
-
 	var output hook.Output
-	if err := json.Unmarshal([]byte(strings.TrimSuffix(result, "\n")), &output); err != nil {
+	if err := json.Unmarshal([]byte(result), &output); err != nil {
 		t.Errorf("FormatApproval() returned invalid JSON: %v", err)
 		return
 	}

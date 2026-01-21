@@ -1364,3 +1364,137 @@ commands = ["ls"]
 		t.Errorf("Input = %q, want %q", entry.Input, rawInput)
 	}
 }
+
+func TestProcessWithResultCapturesOutputOnApproval(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	// Output should contain the approval JSON
+	if entry.Output == "" {
+		t.Error("Expected Output to be non-empty")
+	}
+
+	// Output should match result.Output
+	if result.Output == "" {
+		t.Error("Expected result.Output to be non-empty")
+	}
+
+	// Verify it's a valid approval output
+	if !strings.Contains(entry.Output, `"permissionDecision":"allow"`) {
+		t.Errorf("Expected Output to contain allow decision, got: %s", entry.Output)
+	}
+}
+
+func TestProcessWithResultCapturesOutputOnRejection(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"curl http://example.com"}}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	// Output should contain the ask JSON
+	if entry.Output == "" {
+		t.Error("Expected Output to be non-empty")
+	}
+
+	// Output should match result.Output
+	if result.Output == "" {
+		t.Error("Expected result.Output to be non-empty")
+	}
+
+	// Verify it's a valid ask output
+	if !strings.Contains(entry.Output, `"permissionDecision":"ask"`) {
+		t.Errorf("Expected Output to contain ask decision, got: %s", entry.Output)
+	}
+}
+
+func TestProcessWithResultCapturesOutputOnUnparseable(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"echo 'unclosed"}}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	// Output should contain the ask JSON for unparseable
+	if entry.Output == "" {
+		t.Error("Expected Output to be non-empty")
+	}
+
+	// Output should match result.Output
+	if result.Output == "" {
+		t.Error("Expected result.Output to be non-empty")
+	}
+
+	// Verify it's a valid ask output
+	if !strings.Contains(entry.Output, `"permissionDecision":"ask"`) {
+		t.Errorf("Expected Output to contain ask decision, got: %s", entry.Output)
+	}
+}
+
+func TestResultOutputFieldPopulated(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	// Result.Output should have the output JSON (without trailing newline for storage)
+	if result.Output == "" {
+		t.Error("Expected result.Output to be non-empty")
+	}
+
+	// Should be valid JSON
+	var output Output
+	// Strip trailing newline if present for parsing
+	outputStr := strings.TrimSuffix(result.Output, "\n")
+	if err := json.Unmarshal([]byte(outputStr), &output); err != nil {
+		t.Errorf("Failed to parse result.Output as JSON: %v", err)
+	}
+
+	_ = logPath // Used by setupTestAudit
+}

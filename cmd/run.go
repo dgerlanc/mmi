@@ -26,13 +26,5 @@ func runHook(cmd *cobra.Command, args []string) {
 	}
 
 	// Normal mode: output JSON decision to stdout
-	if result.Approved {
-		fmt.Print(hook.FormatApproval(result.Reason))
-	} else {
-		reason := "command not in allow list"
-		if result.Reason != "" {
-			reason = result.Reason
-		}
-		fmt.Print(hook.FormatAsk(reason))
-	}
+	fmt.Print(result.Output)
 }
