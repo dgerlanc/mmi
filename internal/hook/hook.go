@@ -158,8 +158,16 @@ func Process(r io.Reader) (approved bool, reason string) {
 func ProcessWithResult(r io.Reader) Result {
 	startTime := time.Now()
 
+	// Read raw JSON first so we can log it
+	rawBytes, err := io.ReadAll(r)
+	if err != nil {
+		logger.Debug("failed to read input", "error", err)
+		return Result{}
+	}
+	rawInput := string(rawBytes)
+
 	var input Input
-	if err := json.NewDecoder(r).Decode(&input); err != nil {
+	if err := json.Unmarshal(rawBytes, &input); err != nil {
 		logger.Debug("failed to decode input", "error", err)
 		return Result{}
 	}
@@ -183,7 +191,7 @@ func ProcessWithResult(r io.Reader) Result {
 			Approved:  false,
 			Rejection: &audit.Rejection{Code: audit.CodeUnparseable, Detail: "parse error"},
 		}}
-		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
+		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
 		return Result{Command: cmd, Approved: false, Reason: "unparseable command"}
 	}
 	logger.Debug("split command chain", "segments", len(cmdSegments))
@@ -273,12 +281,12 @@ func ProcessWithResult(r io.Reader) Result {
 	// Log and return based on overall result
 	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
 	if !overallApproved {
-		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
+		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
 		return Result{Command: cmd, Approved: false}
 	}
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
-	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd)
+	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput)
 	return Result{Command: cmd, Approved: true, Reason: reason}
 }
 
@@ -338,7 +346,7 @@ func CheckDenyWithResult(cmd string, denyPatterns []patterns.Pattern) DenyResult
 }
 
 // logAudit logs a command decision to the audit log.
-func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd string) {
+func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput string) {
 	audit.Log(audit.Entry{
 		Version:    1,
 		SessionID:  sessionID,
@@ -348,6 +356,7 @@ func logAudit(command string, approved bool, segments []audit.Segment, durationM
 		Segments:   segments,
 		DurationMs: durationMs,
 		Cwd:        cwd,
+		Input:      rawInput,
 	})
 }
 

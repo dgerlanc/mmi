@@ -198,8 +198,6 @@ func TestClose(t *testing.T) {
 	}
 }
 
-// Phase 1: Entry Serialization Tests
-
 func TestEntrySerializationAllFields(t *testing.T) {
 	entry := Entry{
 		Version:    1,
@@ -653,8 +651,6 @@ func TestTimestampSerializesTenthsOfSecond(t *testing.T) {
 	}
 }
 
-// Phase 5: Log Function Tests
-
 func TestLogAutoPopulatesTimestamp(t *testing.T) {
 	defer Reset()
 
@@ -823,5 +819,103 @@ func TestLogAppendsToExistingFile(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 	if len(lines) != 2 {
 		t.Errorf("Expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestEntryInputFieldSerialization(t *testing.T) {
+	rawInput := `{"session_id":"test-123","tool_name":"Bash","tool_input":{"command":"ls"}}`
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-123",
+		SessionID: "session-456",
+		Timestamp: "2025-01-15T10:30:00.0Z",
+		Command:   "ls",
+		Approved:  true,
+		Cwd:       "/home",
+		Input:     rawInput,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if parsed.Input != rawInput {
+		t.Errorf("Input = %q, want %q", parsed.Input, rawInput)
+	}
+}
+
+func TestEntryInputFieldInJSON(t *testing.T) {
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-123",
+		SessionID: "session-456",
+		Timestamp: "2025-01-15T10:30:00.0Z",
+		Command:   "ls",
+		Approved:  true,
+		Cwd:       "/home",
+		Input:     `{"test":"value"}`,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, `"input"`) {
+		t.Error("Expected input field to be present in JSON")
+	}
+}
+
+func TestLogWritesInputField(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	if err := Init(logPath, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	rawInput := `{"session_id":"sess-abc","tool_use_id":"tool-xyz","tool_name":"Bash","tool_input":{"command":"git status"}}`
+	entry := Entry{
+		Version:   1,
+		ToolUseID: "tool-xyz",
+		SessionID: "sess-abc",
+		Command:   "git status",
+		Approved:  true,
+		Cwd:       "/home/user",
+		Input:     rawInput,
+	}
+
+	if err := Log(entry); err != nil {
+		t.Errorf("Log() error = %v", err)
+	}
+
+	Close()
+
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(content[:len(content)-1], &parsed); err != nil {
+		t.Fatalf("Failed to parse entry: %v", err)
+	}
+
+	if parsed.Input != rawInput {
+		t.Errorf("Input = %q, want %q", parsed.Input, rawInput)
 	}
 }
