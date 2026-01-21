@@ -1293,3 +1293,74 @@ commands = ["ls"]
 		t.Errorf("Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeCommandSubstitution)
 	}
 }
+
+// Phase 6: Raw Input Capture Tests
+
+func TestProcessWithResultCapturesRawInput(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	ProcessWithResult(strings.NewReader(rawInput))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if entry.Input != rawInput {
+		t.Errorf("Input = %q, want %q", entry.Input, rawInput)
+	}
+}
+
+func TestProcessWithResultCapturesRawInputOnRejection(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"curl http://example.com"}}`
+
+	ProcessWithResult(strings.NewReader(rawInput))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if entry.Input != rawInput {
+		t.Errorf("Input = %q, want %q", entry.Input, rawInput)
+	}
+}
+
+func TestProcessWithResultCapturesRawInputOnUnparseable(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"echo 'unclosed"}}`
+
+	ProcessWithResult(strings.NewReader(rawInput))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if entry.Input != rawInput {
+		t.Errorf("Input = %q, want %q", entry.Input, rawInput)
+	}
+}

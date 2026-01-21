@@ -30,6 +30,7 @@ type Entry struct {
 	Approved   bool      `json:"approved"`
 	Segments   []Segment `json:"segments"`
 	Cwd        string    `json:"cwd"`
+	Input      string    `json:"input"`
 }
 
 // Segment represents a single command segment within a chained command.
