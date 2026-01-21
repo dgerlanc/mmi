@@ -49,17 +49,8 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 changelog:
-  sort: asc
-  format: "[{{ .ShortSHA }}](https://github.com/dgerlanc/mmi/commit/{{ .SHA }}) {{ .Title }}"
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
-      - Merge pull request
-      - Merge branch
-
+  use: github-native
+  
 release:
   github:
     owner: dgerlanc
