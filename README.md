@@ -10,6 +10,8 @@ MMI parses Bash commands and automatically approves those that the user specifie
 
 **Important:** Allowing an LLM to execute arbitrary Bash commands in a non-sandboxed environment is inherently unsafe. MMI may reduce that risk but cannot guarantee safety! Use at your own risk and always review your configuration carefully.
 
+**Note:** Claude Code now offers a built-in Bash sandbox mode that restricts file system and network access. You can enable it in your Claude Code settings. MMI can be used alongside sandbox mode for additional control over which commands are auto-approved.
+
 The name "Mother May I?" references the childhood game where permission must be granted before taking action.
 
 This project was inspired by this [post](https://matthewrocklin.com/ai-zealotry/#appendix-permissions-file) by Matt Rocklin.
