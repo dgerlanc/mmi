@@ -62,8 +62,6 @@ release:
     ## MMI {{ .Version }}
 
     Mother May I? - Claude Code Bash command approval hook
-  footer: |
-    **Full Changelog**: [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/dgerlanc/mmi/compare/{{ .PreviousTag }}...{{ .Tag }})
 
 # homebrew_casks:
 #   - name: mmi
