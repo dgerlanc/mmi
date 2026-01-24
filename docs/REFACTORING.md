@@ -87,9 +87,9 @@ func FormatApproval(reason string) string {
 
 ---
 
-## P1: Extract Shared Test Utilities
+## P1: Extract Shared Test Utilities [COMPLETED]
 
-### 1.3 Create Test Helper Package
+### 1.3 Create Test Helper Package [COMPLETED]
 
 **Files:** Multiple `*_test.go` files
 
@@ -373,10 +373,10 @@ func WithVerbose(v bool) Option {
 
 ## Implementation Order
 
-### Phase 1: Quick Wins (P1 items)
-1. Remove duplicate `CheckDeny`/`CheckSafe` functions
-2. Fix silent JSON error handling
-3. Create shared test utilities
+### Phase 1: Quick Wins (P1 items) [COMPLETED]
+1. ~~Remove duplicate `CheckDeny`/`CheckSafe` functions~~ ✓
+2. ~~Fix silent JSON error handling~~ ✓
+3. ~~Create shared test utilities~~ ✓
 
 ### Phase 2: Code Organization (P2 items)
 1. Split `hook.go` into focused files
