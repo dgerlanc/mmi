@@ -1,4 +1,8 @@
 // Package hook implements the core command approval logic for mmi.
+//
+// The main entry point is ProcessWithResult(), which reads JSON input from
+// Claude Code, evaluates the command against configured patterns, and returns
+// a decision. See types.go for data structures and their relationships.
 package hook
 
 import (
@@ -12,46 +16,7 @@ import (
 	"github.com/dgerlanc/mmi/internal/logger"
 )
 
-// Result contains the outcome of processing a command.
-type Result struct {
-	Command  string // The command that was processed
-	Approved bool   // Whether the command was approved
-	Reason   string // The reason for approval/denial
-	Output   string // The JSON output sent to Claude Code
-}
-
-// ToolInputData represents the tool_input field in the Claude Code hook input
-type ToolInputData struct {
-	Command     string `json:"command"`
-	Description string `json:"description,omitempty"` // optional
-	Timeout     int    `json:"timeout,omitempty"`     // optional
-}
-
-// Input represents the JSON input from Claude Code
-type Input struct {
-	SessionID      string        `json:"session_id"`
-	TranscriptPath string        `json:"transcript_path"`
-	Cwd            string        `json:"cwd"`
-	PermissionMode string        `json:"permission_mode"`
-	HookEventName  string        `json:"hook_event_name"`
-	ToolName       string        `json:"tool_name"`
-	ToolInput      ToolInputData `json:"tool_input"`
-	ToolUseID      string        `json:"tool_use_id"`
-}
-
-// Output represents the approval JSON output
-type Output struct {
-	HookSpecificOutput SpecificOutput `json:"hookSpecificOutput"`
-}
-
-// SpecificOutput contains the permission decision
-type SpecificOutput struct {
-	HookEventName            string `json:"hookEventName"`
-	PermissionDecision       string `json:"permissionDecision"`
-	PermissionDecisionReason string `json:"permissionDecisionReason"`
-}
-
-// Read a command and return whether it should be approved and the reason.
+// Process reads a command and return whether it should be approved and the reason.
 // Returns false for parse errors, non-Bash tools, dangerous patterns, or unsafe commands.
 func Process(r io.Reader) (approved bool, reason string) {
 	result := ProcessWithResult(r)

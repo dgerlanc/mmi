@@ -6,15 +6,8 @@ import (
 	"github.com/dgerlanc/mmi/internal/patterns"
 )
 
-// SafeResult contains detailed information about a safe pattern match.
-type SafeResult struct {
-	Matched bool
-	Name    string
-	Type    string // simple, subcommand, regex, command
-	Pattern string
-}
-
 // CheckSafe checks if a command matches a safe pattern and returns details.
+// Iterates through safeCommands in order and returns on first match.
 func CheckSafe(cmd string, safeCommands []patterns.Pattern) SafeResult {
 	for _, p := range safeCommands {
 		if p.Regex.MatchString(cmd) {
@@ -29,14 +22,8 @@ func CheckSafe(cmd string, safeCommands []patterns.Pattern) SafeResult {
 	return SafeResult{Matched: false}
 }
 
-// DenyResult contains detailed information about a deny pattern match.
-type DenyResult struct {
-	Denied  bool
-	Name    string
-	Pattern string
-}
-
 // CheckDeny checks if a command matches a deny pattern and returns details.
+// Iterates through denyPatterns in order and returns on first match.
 func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 	for _, p := range denyPatterns {
 		if p.Regex.MatchString(cmd) {
