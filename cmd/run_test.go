@@ -4,41 +4,22 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/dgerlanc/mmi/internal/config"
+	"github.com/dgerlanc/mmi/internal/testutil"
 	"github.com/spf13/cobra"
 )
 
-// setupTestConfig initializes a test configuration
+// setupTestConfig initializes a test configuration using shared test utilities
 func setupTestConfig(t *testing.T) func() {
 	t.Helper()
 	resetGlobalState()
 
-	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-
-	// Write a test config
-	testConfig := `
-[[commands.simple]]
-name = "safe"
-commands = ["ls", "cat", "echo"]
-
-[[deny.simple]]
-name = "dangerous"
-commands = ["rm"]
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	config.Reset()
-	config.Init()
+	cleanup := testutil.SetupTestConfig(t, testutil.MinimalTestConfig)
 
 	return func() {
-		os.Unsetenv("MMI_CONFIG")
+		cleanup()
 		resetGlobalState()
 	}
 }
