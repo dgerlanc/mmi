@@ -65,10 +65,17 @@ func EnsureConfigFiles(configDir string) error {
 	return nil
 }
 
+// sectionOptions controls how a config section is parsed.
+type sectionOptions struct {
+	name            string // Section name for error messages: "wrappers", "commands", "deny"
+	isWrapper       bool   // Affects pattern generation for simple commands
+	allowSubcommand bool   // Whether to parse subcommand entries
+	allowCommand    bool   // Whether to parse command entries
+}
+
 // parseSection parses a config section and returns compiled patterns.
-// isWrapper indicates if this is a wrapper section (affects pattern generation).
-// sectionName is used for error messages to identify which section has the error.
-func parseSection(sectionData map[string]any, isWrapper bool, sectionName string) ([]patterns.Pattern, error) {
+// The options parameter controls which entry types are allowed and how patterns are generated.
+func parseSection(sectionData map[string]any, opts sectionOptions) ([]patterns.Pattern, error) {
 	var result []patterns.Pattern
 
 	for sectionType, value := range sectionData {
@@ -80,14 +87,14 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				cmds := toStringSlice(entry["commands"])
 				if len(cmds) == 0 {
 					if name != "" {
-						return nil, fmt.Errorf("%s.simple[%d] %q: \"commands\" field is required and must not be empty", sectionName, i, name)
+						return nil, fmt.Errorf("%s.simple[%d] %q: \"commands\" field is required and must not be empty", opts.name, i, name)
 					}
-					return nil, fmt.Errorf("%s.simple[%d]: \"commands\" field is required and must not be empty", sectionName, i)
+					return nil, fmt.Errorf("%s.simple[%d]: \"commands\" field is required and must not be empty", opts.name, i)
 				}
 				for _, cmd := range cmds {
 					var pattern string
 					var patternName string
-					if isWrapper {
+					if opts.isWrapper {
 						pattern = patterns.BuildWrapperPattern(cmd, nil)
 						patternName = cmd
 					} else {
@@ -103,11 +110,14 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 			}
 
 		case "command":
+			if !opts.allowCommand {
+				continue
+			}
 			entries := toMapSlice(value)
 			for i, entry := range entries {
 				cmd, _ := entry["command"].(string)
 				if cmd == "" {
-					return nil, fmt.Errorf("%s.command[%d]: \"command\" field is required and must not be empty", sectionName, i)
+					return nil, fmt.Errorf("%s.command[%d]: \"command\" field is required and must not be empty", opts.name, i)
 				}
 				flags := toStringSlice(entry["flags"])
 				pattern := patterns.BuildWrapperPattern(cmd, flags)
@@ -119,16 +129,19 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 			}
 
 		case "subcommand":
+			if !opts.allowSubcommand {
+				continue
+			}
 			entries := toMapSlice(value)
 			for i, entry := range entries {
 				cmd, _ := entry["command"].(string)
 				if cmd == "" {
-					return nil, fmt.Errorf("%s.subcommand[%d]: \"command\" field is required and must not be empty", sectionName, i)
+					return nil, fmt.Errorf("%s.subcommand[%d]: \"command\" field is required and must not be empty", opts.name, i)
 				}
 				subs := toStringSlice(entry["subcommands"])
 				flags := toStringSlice(entry["flags"])
 				if len(subs) == 0 {
-					return nil, fmt.Errorf("%s.subcommand[%d] %q: \"subcommands\" field is required and must not be empty", sectionName, i, cmd)
+					return nil, fmt.Errorf("%s.subcommand[%d] %q: \"subcommands\" field is required and must not be empty", opts.name, i, cmd)
 				}
 				pattern := patterns.BuildSubcommandPattern(cmd, subs, flags)
 				re, err := regexp.Compile(pattern)
@@ -145,9 +158,9 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				patternName, _ := entry["name"].(string)
 				if pattern == "" {
 					if patternName != "" {
-						return nil, fmt.Errorf("%s.regex[%d] %q: \"pattern\" field is required and must not be empty", sectionName, i, patternName)
+						return nil, fmt.Errorf("%s.regex[%d] %q: \"pattern\" field is required and must not be empty", opts.name, i, patternName)
 					}
-					return nil, fmt.Errorf("%s.regex[%d]: \"pattern\" field is required and must not be empty", sectionName, i)
+					return nil, fmt.Errorf("%s.regex[%d]: \"pattern\" field is required and must not be empty", opts.name, i)
 				}
 				re, err := regexp.Compile(pattern)
 				if err != nil {
@@ -262,7 +275,11 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 
 	// Parse sections from this file
 	if wrappersSection, ok := raw["wrappers"].(map[string]any); ok {
-		wrappers, err := parseSection(wrappersSection, true, "wrappers")
+		wrappers, err := parseSection(wrappersSection, sectionOptions{
+			name:         "wrappers",
+			isWrapper:    true,
+			allowCommand: true,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse wrappers: %w", err)
 		}
@@ -270,7 +287,10 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 	}
 
 	if commandsSection, ok := raw["commands"].(map[string]any); ok {
-		commands, err := parseSection(commandsSection, false, "commands")
+		commands, err := parseSection(commandsSection, sectionOptions{
+			name:            "commands",
+			allowSubcommand: true,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse commands: %w", err)
 		}
@@ -278,7 +298,9 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 	}
 
 	if denySection, ok := raw["deny"].(map[string]any); ok {
-		deny, err := parseDenySection(denySection)
+		deny, err := parseSection(denySection, sectionOptions{
+			name: "deny",
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse deny: %w", err)
 		}
@@ -286,60 +308,6 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 	}
 
 	return cfg, nil
-}
-
-// parseDenySection parses the deny section of the config.
-// Deny patterns use simple and regex subsections (no subcommand support).
-func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
-	var result []patterns.Pattern
-
-	for sectionType, value := range sectionData {
-		switch sectionType {
-		case "simple":
-			// [[deny.simple]] name = "label", commands = [...]
-			entries := toMapSlice(value)
-			for i, entry := range entries {
-				name, _ := entry["name"].(string)
-				cmds := toStringSlice(entry["commands"])
-				if len(cmds) == 0 {
-					if name != "" {
-						return nil, fmt.Errorf("deny.simple[%d] %q: \"commands\" field is required and must not be empty", i, name)
-					}
-					return nil, fmt.Errorf("deny.simple[%d]: \"commands\" field is required and must not be empty", i)
-				}
-				for _, cmd := range cmds {
-					// For deny patterns, match the command at the start
-					pattern := patterns.BuildSimplePattern(cmd)
-					re, err := regexp.Compile(pattern)
-					if err != nil {
-						return nil, fmt.Errorf("invalid deny pattern for command %q: %w", cmd, err)
-					}
-					result = append(result, patterns.Pattern{Regex: re, Name: name, Type: "simple", Pattern: pattern})
-				}
-			}
-
-		case "regex":
-			// [[deny.regex]] pattern = "^regex", name = "desc"
-			entries := toMapSlice(value)
-			for i, entry := range entries {
-				pattern, _ := entry["pattern"].(string)
-				patternName, _ := entry["name"].(string)
-				if pattern == "" {
-					if patternName != "" {
-						return nil, fmt.Errorf("deny.regex[%d] %q: \"pattern\" field is required and must not be empty", i, patternName)
-					}
-					return nil, fmt.Errorf("deny.regex[%d]: \"pattern\" field is required and must not be empty", i)
-				}
-				re, err := regexp.Compile(pattern)
-				if err != nil {
-					return nil, fmt.Errorf("invalid deny regex pattern %q: %w", pattern, err)
-				}
-				result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "regex", Pattern: pattern})
-			}
-		}
-	}
-
-	return result, nil
 }
 
 // loadEmbeddedDefaults returns an empty config that denies all commands.
