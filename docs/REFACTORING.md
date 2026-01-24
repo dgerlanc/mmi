@@ -13,9 +13,9 @@ The codebase is well-structured overall with good separation into internal packa
 
 ---
 
-## P1: Remove Dead Code
+## P1: Remove Dead Code [COMPLETED]
 
-### 1.1 Remove Duplicate Check Functions
+### 1.1 Remove Duplicate Check Functions [COMPLETED]
 
 **Files:** `internal/hook/hook.go`
 

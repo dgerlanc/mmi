@@ -296,9 +296,12 @@ func TestCheckSafe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hook.CheckSafe(tt.input, cfg.SafeCommands)
-			if got != tt.expected {
-				t.Errorf("CheckSafe(%q) = %q, want %q", tt.input, got, tt.expected)
+			result := hook.CheckSafe(tt.input, cfg.SafeCommands)
+			if !result.Matched {
+				t.Errorf("CheckSafe(%q) did not match, want %q", tt.input, tt.expected)
+			}
+			if result.Name != tt.expected {
+				t.Errorf("CheckSafe(%q).Name = %q, want %q", tt.input, result.Name, tt.expected)
 			}
 		})
 	}
@@ -320,8 +323,9 @@ func TestCheckSafeUnsafe(t *testing.T) {
 
 	for _, cmd := range unsafeCommands {
 		t.Run(cmd, func(t *testing.T) {
-			if got := hook.CheckSafe(cmd, cfg.SafeCommands); got != "" {
-				t.Errorf("CheckSafe(%q) = %q, want empty (unsafe)", cmd, got)
+			result := hook.CheckSafe(cmd, cfg.SafeCommands)
+			if result.Matched {
+				t.Errorf("CheckSafe(%q) matched %q, want no match (unsafe)", cmd, result.Name)
 			}
 		})
 	}
@@ -646,8 +650,8 @@ subcommands = ["arg"]
 	if len(wrappers) != 1 || wrappers[0] != "custom" {
 		t.Errorf("Custom wrapper not stripped: %v", wrappers)
 	}
-	if hook.CheckSafe(core, cfg.SafeCommands) != "mycommand" {
-		t.Errorf("Custom command not recognized: %q", core)
+	if result := hook.CheckSafe(core, cfg.SafeCommands); result.Name != "mycommand" {
+		t.Errorf("Custom command not recognized: %q (got %q)", core, result.Name)
 	}
 }
 
