@@ -366,7 +366,11 @@ func FormatApproval(reason string) string {
 			PermissionDecisionReason: reason,
 		},
 	}
-	data, _ := json.Marshal(output)
+	data, err := json.Marshal(output)
+	if err != nil {
+		logger.Debug("failed to marshal approval output", "error", err)
+		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"internal error"}}`
+	}
 	return string(data)
 }
 
@@ -379,7 +383,11 @@ func FormatAsk(reason string) string {
 			PermissionDecisionReason: reason,
 		},
 	}
-	data, _ := json.Marshal(output)
+	data, err := json.Marshal(output)
+	if err != nil {
+		logger.Debug("failed to marshal ask output", "error", err)
+		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"internal error"}}`
+	}
 	return string(data)
 }
 
