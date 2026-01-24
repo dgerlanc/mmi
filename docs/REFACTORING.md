@@ -156,9 +156,9 @@ commands = ["rm"]
 
 ---
 
-## P2: Break Up hook.go
+## P2: Break Up hook.go [COMPLETED]
 
-### 2.1 Extract Command Parsing
+### 2.1 Extract Command Parsing [COMPLETED]
 
 **Files:** `internal/hook/hook.go` (565 lines)
 
@@ -196,9 +196,9 @@ internal/hook/
 
 ---
 
-## P2: Reduce Code Duplication in Config Parsing
+## P2: Reduce Code Duplication in Config Parsing [COMPLETED]
 
-### 2.2 Consolidate parseSection and parseDenySection
+### 2.2 Consolidate parseSection and parseDenySection [COMPLETED]
 
 **Files:** `internal/config/config.go`
 
@@ -243,9 +243,9 @@ parseSection(data, sectionOptions{name: "deny"})
 
 ---
 
-## P2: Improve Type Organization
+## P2: Improve Type Organization [COMPLETED]
 
-### 2.3 Consolidate Type Definitions
+### 2.3 Consolidate Type Definitions [COMPLETED]
 
 **Issue:** Related types are scattered across packages:
 
@@ -378,10 +378,10 @@ func WithVerbose(v bool) Option {
 2. ~~Fix silent JSON error handling~~ ✓
 3. ~~Create shared test utilities~~ ✓
 
-### Phase 2: Code Organization (P2 items)
-1. Split `hook.go` into focused files
-2. Consolidate config parsing functions
-3. Improve type documentation
+### Phase 2: Code Organization (P2 items) [COMPLETED]
+1. ~~Split `hook.go` into focused files~~ ✓
+2. ~~Consolidate config parsing functions~~ ✓
+3. ~~Improve type documentation~~ ✓
 
 ### Phase 3: Architecture (P3 items)
 1. Evaluate need for application context
