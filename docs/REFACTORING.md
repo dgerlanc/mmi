@@ -49,9 +49,9 @@ func CheckSafeWithResult(cmd string, safeCommands []patterns.Pattern) SafeResult
 
 ---
 
-## P1: Fix Silent Error Handling
+## P1: Fix Silent Error Handling [COMPLETED]
 
-### 1.2 Handle JSON Marshal Errors
+### 1.2 Handle JSON Marshal Errors [COMPLETED]
 
 **Files:** `internal/hook/hook.go`
 
