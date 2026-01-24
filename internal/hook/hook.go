@@ -231,7 +231,7 @@ func ProcessWithResult(r io.Reader) Result {
 		}
 
 		// Check deny list on core command (after splitting chain and stripping wrappers)
-		denyResult := CheckDenyWithResult(coreCmd, cfg.DenyPatterns)
+		denyResult := CheckDeny(coreCmd, cfg.DenyPatterns)
 		if denyResult.Denied {
 			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyResult.Name)
 			overallApproved = false
@@ -249,7 +249,7 @@ func ProcessWithResult(r io.Reader) Result {
 		}
 
 		// Check safe patterns
-		safeResult := CheckSafeWithResult(coreCmd, cfg.SafeCommands)
+		safeResult := CheckSafe(coreCmd, cfg.SafeCommands)
 		if !safeResult.Matched {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
 			overallApproved = false
@@ -297,17 +297,6 @@ func ProcessWithResult(r io.Reader) Result {
 	return Result{Command: cmd, Approved: true, Reason: reason, Output: output}
 }
 
-// CheckDeny checks if a command matches any deny pattern.
-// Returns the pattern name if denied, or empty string if not.
-func CheckDeny(cmd string, denyPatterns []patterns.Pattern) string {
-	for _, p := range denyPatterns {
-		if p.Regex.MatchString(cmd) {
-			return p.Name
-		}
-	}
-	return ""
-}
-
 // SafeResult contains detailed information about a safe pattern match.
 type SafeResult struct {
 	Matched bool
@@ -316,8 +305,8 @@ type SafeResult struct {
 	Pattern string
 }
 
-// CheckSafeWithResult checks if a command matches a safe pattern and returns details.
-func CheckSafeWithResult(cmd string, safeCommands []patterns.Pattern) SafeResult {
+// CheckSafe checks if a command matches a safe pattern and returns details.
+func CheckSafe(cmd string, safeCommands []patterns.Pattern) SafeResult {
 	for _, p := range safeCommands {
 		if p.Regex.MatchString(cmd) {
 			return SafeResult{
@@ -338,8 +327,8 @@ type DenyResult struct {
 	Pattern string
 }
 
-// CheckDenyWithResult checks if a command matches a deny pattern and returns details.
-func CheckDenyWithResult(cmd string, denyPatterns []patterns.Pattern) DenyResult {
+// CheckDeny checks if a command matches a deny pattern and returns details.
+func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 	for _, p := range denyPatterns {
 		if p.Regex.MatchString(cmd) {
 			return DenyResult{
@@ -551,15 +540,4 @@ func StripWrappers(cmd string, wrapperPatterns []patterns.Pattern) (string, []st
 		}
 	}
 	return strings.TrimSpace(cmd), wrappers
-}
-
-// CheckSafe checks if a command matches a safe pattern.
-// Returns the pattern name or empty string if not safe.
-func CheckSafe(cmd string, safeCommands []patterns.Pattern) string {
-	for _, p := range safeCommands {
-		if p.Regex.MatchString(cmd) {
-			return p.Name
-		}
-	}
-	return ""
 }

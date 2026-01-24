@@ -377,7 +377,7 @@ func TestCheckSafeResultMatchedTrue(t *testing.T) {
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
 
-	result := CheckSafeWithResult("ls -la", patterns)
+	result := CheckSafe("ls -la", patterns)
 
 	if !result.Matched {
 		t.Error("Expected Matched=true for 'ls' command")
@@ -398,7 +398,7 @@ func TestCheckSafeResultMatchedFalse(t *testing.T) {
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
 
-	result := CheckSafeWithResult("curl http://example.com", patterns)
+	result := CheckSafe("curl http://example.com", patterns)
 
 	if result.Matched {
 		t.Error("Expected Matched=false for unknown command")
@@ -410,7 +410,7 @@ func TestCheckSafeResultSimpleType(t *testing.T) {
 		{name: "pwd", patternType: "simple", pattern: `^pwd\b`},
 	})
 
-	result := CheckSafeWithResult("pwd", patterns)
+	result := CheckSafe("pwd", patterns)
 
 	if result.Type != "simple" {
 		t.Errorf("Type = %q, want %q", result.Type, "simple")
@@ -422,7 +422,7 @@ func TestCheckSafeResultSubcommandType(t *testing.T) {
 		{name: "git", patternType: "subcommand", pattern: `^git\s+(status|log)\b`},
 	})
 
-	result := CheckSafeWithResult("git status", patterns)
+	result := CheckSafe("git status", patterns)
 
 	if result.Type != "subcommand" {
 		t.Errorf("Type = %q, want %q", result.Type, "subcommand")
@@ -434,7 +434,7 @@ func TestCheckSafeResultRegexType(t *testing.T) {
 		{name: "custom", patternType: "regex", pattern: `^mycommand\s+.*`},
 	})
 
-	result := CheckSafeWithResult("mycommand foo bar", patterns)
+	result := CheckSafe("mycommand foo bar", patterns)
 
 	if result.Type != "regex" {
 		t.Errorf("Type = %q, want %q", result.Type, "regex")
@@ -446,7 +446,7 @@ func TestCheckSafeResultCommandType(t *testing.T) {
 		{name: "timeout", patternType: "command", pattern: `^timeout\s+\d+\s+`},
 	})
 
-	result := CheckSafeWithResult("timeout 10 ls", patterns)
+	result := CheckSafe("timeout 10 ls", patterns)
 
 	if result.Type != "command" {
 		t.Errorf("Type = %q, want %q", result.Type, "command")
@@ -458,7 +458,7 @@ func TestCheckDenyResultDeniedTrue(t *testing.T) {
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})
 
-	result := CheckDenyWithResult("rm -rf /", patterns)
+	result := CheckDeny("rm -rf /", patterns)
 
 	if !result.Denied {
 		t.Error("Expected Denied=true for 'rm -rf /'")
@@ -476,7 +476,7 @@ func TestCheckDenyResultDeniedFalse(t *testing.T) {
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})
 
-	result := CheckDenyWithResult("ls -la", patterns)
+	result := CheckDeny("ls -la", patterns)
 
 	if result.Denied {
 		t.Error("Expected Denied=false for 'ls -la'")
