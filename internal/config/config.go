@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dgerlanc/mmi/internal/constants"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/dgerlanc/mmi/internal/patterns"
 )
@@ -36,7 +37,7 @@ var (
 // GetConfigDir returns the config directory path.
 // Uses MMI_CONFIG env var if set, otherwise ~/.config/mmi
 func GetConfigDir() (string, error) {
-	if dir := os.Getenv("MMI_CONFIG"); dir != "" {
+	if dir := os.Getenv(constants.EnvConfigDir); dir != "" {
 		return dir, nil
 	}
 
@@ -44,20 +45,20 @@ func GetConfigDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "mmi"), nil
+	return filepath.Join(home, constants.XDGConfigSubdir, constants.AppName), nil
 }
 
 // EnsureConfigFiles creates the config directory and writes default config file if it doesn't exist.
 func EnsureConfigFiles(configDir string) error {
 	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, constants.DirMode); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Write default config.toml if it doesn't exist
-	configPath := filepath.Join(configDir, "config.toml")
+	configPath := filepath.Join(configDir, constants.ConfigFileName)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := os.WriteFile(configPath, defaultConfig, 0644); err != nil {
+		if err := os.WriteFile(configPath, defaultConfig, constants.FileMode); err != nil {
 			return fmt.Errorf("failed to write config.toml: %w", err)
 		}
 	}
@@ -364,7 +365,7 @@ func Init() error {
 		return err
 	}
 
-	configPath := filepath.Join(configDir, "config.toml")
+	configPath := filepath.Join(configDir, constants.ConfigFileName)
 
 	configData, err := os.ReadFile(configPath)
 	if err != nil {

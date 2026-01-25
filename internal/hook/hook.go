@@ -16,6 +16,21 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// Tool names
+const ToolNameBash = "Bash"
+
+// Hook event names
+const EventPreToolUse = "PreToolUse"
+
+// Permission decisions
+const (
+	DecisionAllow = "allow"
+	DecisionAsk   = "ask"
+)
+
+// Audit log version
+const AuditVersion = 1
+
 // Result contains the outcome of processing a command.
 type Result struct {
 	Command  string // The command that was processed
@@ -175,7 +190,7 @@ func ProcessWithResult(r io.Reader) Result {
 		return Result{Output: output}
 	}
 
-	if input.ToolName != "Bash" {
+	if input.ToolName != ToolNameBash {
 		logger.Debug("not a Bash command", "tool", input.ToolName)
 		output := FormatAsk("not a Bash command")
 		return Result{Output: output}
@@ -344,7 +359,7 @@ func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 // logAudit logs a command decision to the audit log.
 func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput string) {
 	audit.Log(audit.Entry{
-		Version:    1,
+		Version:    AuditVersion,
 		SessionID:  sessionID,
 		ToolUseID:  toolUseID,
 		Command:    command,
@@ -361,8 +376,8 @@ func logAudit(command string, approved bool, segments []audit.Segment, durationM
 func FormatApproval(reason string) string {
 	output := Output{
 		HookSpecificOutput: SpecificOutput{
-			HookEventName:            "PreToolUse",
-			PermissionDecision:       "allow",
+			HookEventName:            EventPreToolUse,
+			PermissionDecision:       DecisionAllow,
 			PermissionDecisionReason: reason,
 		},
 	}
@@ -378,8 +393,8 @@ func FormatApproval(reason string) string {
 func FormatAsk(reason string) string {
 	output := Output{
 		HookSpecificOutput: SpecificOutput{
-			HookEventName:            "PreToolUse",
-			PermissionDecision:       "ask",
+			HookEventName:            EventPreToolUse,
+			PermissionDecision:       DecisionAsk,
 			PermissionDecisionReason: reason,
 		},
 	}
