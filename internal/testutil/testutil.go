@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dgerlanc/mmi/internal/config"
+	"github.com/dgerlanc/mmi/internal/constants"
 )
 
 // SetupTestConfig creates a temporary config directory with test configuration.
@@ -15,11 +16,11 @@ func SetupTestConfig(t *testing.T, configContent string) func() {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
+	os.Setenv(constants.EnvConfigDir, tmpDir)
 
 	if configContent != "" {
-		configPath := filepath.Join(tmpDir, "config.toml")
-		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		configPath := filepath.Join(tmpDir, constants.ConfigFileName)
+		if err := os.WriteFile(configPath, []byte(configContent), constants.FileMode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -28,7 +29,7 @@ func SetupTestConfig(t *testing.T, configContent string) func() {
 	config.Init()
 
 	return func() {
-		os.Unsetenv("MMI_CONFIG")
+		os.Unsetenv(constants.EnvConfigDir)
 		config.Reset()
 	}
 }

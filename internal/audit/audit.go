@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dgerlanc/mmi/internal/constants"
 	"github.com/dgerlanc/mmi/internal/logger"
 )
 
@@ -18,6 +19,9 @@ const (
 	CodeDenyMatch           = "DENY_MATCH"
 	CodeNoMatch             = "NO_MATCH"
 )
+
+// TimestampFormat is the format used for audit log timestamps.
+const TimestampFormat = "2006-01-02T15:04:05.0Z07:00"
 
 // Entry represents a single audit log entry (v1 format).
 type Entry struct {
@@ -95,13 +99,13 @@ func Init(path string, disable bool) error {
 
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, constants.DirMode); err != nil {
 		logger.Debug("failed to create audit log directory", "error", err)
 		return err
 	}
 
 	// Open audit log file in append mode
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, constants.FileMode)
 	if err != nil {
 		logger.Debug("failed to open audit log file", "error", err)
 		return err
@@ -138,7 +142,7 @@ func Log(entry Entry) error {
 	}
 
 	// Format timestamp with tenths of second precision (1 decimal place)
-	entry.Timestamp = time.Now().UTC().Format("2006-01-02T15:04:05.0Z07:00")
+	entry.Timestamp = time.Now().UTC().Format(TimestampFormat)
 
 	data, err := json.Marshal(entry)
 	if err != nil {

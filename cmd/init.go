@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/dgerlanc/mmi/internal/config"
+	"github.com/dgerlanc/mmi/internal/constants"
+	"github.com/dgerlanc/mmi/internal/hook"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +47,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	configPath := filepath.Join(configDir, "config.toml")
+	configPath := filepath.Join(configDir, constants.ConfigFileName)
 
 	// Check if config already exists
 	configExists := false
@@ -58,12 +60,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Config file already exists at %s (use --force to overwrite)\n", configPath)
 	} else {
 		// Create directory if needed
-		if err := os.MkdirAll(configDir, 0755); err != nil {
+		if err := os.MkdirAll(configDir, constants.DirMode); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 
 		// Write default config file
-		if err := os.WriteFile(configPath, config.GetDefaultConfig(), 0644); err != nil {
+		if err := os.WriteFile(configPath, config.GetDefaultConfig(), constants.FileMode); err != nil {
 			return fmt.Errorf("failed to write config file: %w", err)
 		}
 
@@ -94,7 +96,7 @@ func getClaudeSettingsPath() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	return filepath.Join(homeDir, ".claude", "settings.json"), nil
+	return filepath.Join(homeDir, constants.ClaudeConfigDir, constants.ClaudeSettingsFile), nil
 }
 
 // isMMIHookPresent checks if the mmi hook is already configured in the settings.
@@ -109,7 +111,7 @@ func isMMIHookPresent(settings map[string]any) bool {
 		return false
 	}
 
-	preToolUse, ok := hooks["PreToolUse"].([]any)
+	preToolUse, ok := hooks[hook.EventPreToolUse].([]any)
 	if !ok {
 		return false
 	}
@@ -120,7 +122,7 @@ func isMMIHookPresent(settings map[string]any) bool {
 			continue
 		}
 
-		if m["matcher"] != "Bash" {
+		if m["matcher"] != hook.ToolNameBash {
 			continue
 		}
 
@@ -129,13 +131,13 @@ func isMMIHookPresent(settings map[string]any) bool {
 			continue
 		}
 
-		for _, hook := range hooksList {
-			h, ok := hook.(map[string]any)
+		for _, hk := range hooksList {
+			h, ok := hk.(map[string]any)
 			if !ok {
 				continue
 			}
 
-			if h["type"] == "command" && h["command"] == "mmi" {
+			if h["type"] == "command" && h["command"] == constants.AppName {
 				return true
 			}
 		}
@@ -159,25 +161,25 @@ func addMMIHook(settings map[string]any) map[string]any {
 	}
 
 	// Ensure PreToolUse array exists
-	preToolUse, ok := hooks["PreToolUse"].([]any)
+	preToolUse, ok := hooks[hook.EventPreToolUse].([]any)
 	if !ok {
 		preToolUse = []any{}
 	}
 
 	// Create the mmi hook entry
 	mmiHook := map[string]any{
-		"matcher": "Bash",
+		"matcher": hook.ToolNameBash,
 		"hooks": []any{
 			map[string]any{
 				"type":    "command",
-				"command": "mmi",
+				"command": constants.AppName,
 			},
 		},
 	}
 
 	// Append the new matcher
 	preToolUse = append(preToolUse, mmiHook)
-	hooks["PreToolUse"] = preToolUse
+	hooks[hook.EventPreToolUse] = preToolUse
 
 	return settings
 }
@@ -213,7 +215,7 @@ func configureClaudeSettings() error {
 
 	// Create directory if needed
 	settingsDir := filepath.Dir(settingsPath)
-	if err := os.MkdirAll(settingsDir, 0755); err != nil {
+	if err := os.MkdirAll(settingsDir, constants.DirMode); err != nil {
 		return fmt.Errorf("failed to create Claude settings directory: %w", err)
 	}
 
@@ -223,7 +225,7 @@ func configureClaudeSettings() error {
 		return fmt.Errorf("failed to marshal Claude settings: %w", err)
 	}
 
-	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, data, constants.FileMode); err != nil {
 		return fmt.Errorf("failed to write Claude settings.json: %w", err)
 	}
 
