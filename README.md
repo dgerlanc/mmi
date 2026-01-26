@@ -4,6 +4,10 @@
 
 A CLI utility that acts as a PreToolUse Hook for Claude Code, providing intelligent auto-approval of safe Bash commands.
 
+Here is `mmi` in action as seen through the audit log: `tail -f ~/.local/share/mmi/audit.log | jq`
+
+![demo](./demo.svg)
+
 ## Overview
 
 MMI parses Bash commands and automatically approves those that the user specifies as safe, eliminating the need for manual approval on every command. This significantly speeds up development workflows while maintaining security through a configurable deny/allowlist approach.
