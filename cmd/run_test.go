@@ -227,12 +227,12 @@ func TestRunHookNormalModeRejectedSilent(t *testing.T) {
 	io.Copy(&buf, stdoutR)
 	output := buf.String()
 
-	// Rejected commands produce ask JSON output
+	// Commands matching deny list produce deny JSON output
 	if output == "" {
-		t.Errorf("expected ask output for rejected command, got nothing")
+		t.Errorf("expected deny output for rejected command, got nothing")
 	}
-	if !strings.Contains(output, `"permissionDecision":"ask"`) {
-		t.Errorf("expected ask permission decision, got: %s", output)
+	if !strings.Contains(output, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny permission decision, got: %s", output)
 	}
 }
 
