@@ -219,6 +219,7 @@ func ProcessWithResult(r io.Reader) Result {
 	var reasons []string
 	var auditSegments []audit.Segment
 	overallApproved := true
+	hasDenyMatch := false
 
 	// Evaluate ALL segments - don't return early on rejection
 	for i, segment := range cmdSegments {
@@ -250,6 +251,7 @@ func ProcessWithResult(r io.Reader) Result {
 		if denyResult.Denied {
 			logger.Debug("rejected by deny list", "command", coreCmd, "reason", denyResult.Name)
 			overallApproved = false
+			hasDenyMatch = true
 			auditSegments = append(auditSegments, audit.Segment{
 				Command:  segment,
 				Approved: false,
@@ -301,7 +303,12 @@ func ProcessWithResult(r io.Reader) Result {
 	// Log and return based on overall result
 	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
 	if !overallApproved {
-		output := FormatAsk("command not in allow list")
+		var output string
+		if hasDenyMatch {
+			output = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"command matches deny list"}}`
+		} else {
+			output = FormatAsk("command not in allow list")
+		}
 		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
 		return Result{Command: cmd, Approved: false, Output: output}
 	}
