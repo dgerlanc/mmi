@@ -31,7 +31,7 @@ func FuzzSplitCommandChain(f *testing.F) {
 	f.Add("for i in 1 2 3; do echo $i; done")
 	f.Add("if [ -f foo ]; then cat foo; fi")
 
-	f.Fuzz(func(t *testing.T, cmd string) {
+	f.Fuzz(func(_ *testing.T, cmd string) {
 		// Just ensure no panics
 		_, _ = hook.SplitCommandChain(cmd)
 	})
@@ -51,7 +51,7 @@ func FuzzProcess(f *testing.F) {
 	f.Add(`not json`)
 	f.Add(`{"tool_name":"Bash","tool_input":{"command":"sudo rm -rf /"}}`)
 
-	f.Fuzz(func(t *testing.T, input string) {
+	f.Fuzz(func(_ *testing.T, input string) {
 		// Just ensure no panics
 		_ = hook.ProcessWithResult(strings.NewReader(input))
 	})
@@ -69,7 +69,7 @@ func FuzzStripWrappers(f *testing.F) {
 	f.Add("")
 	f.Add("   ")
 
-	f.Fuzz(func(t *testing.T, cmd string) {
+	f.Fuzz(func(_ *testing.T, cmd string) {
 		// Get config and test with default patterns
 		cfg := getTestConfig()
 		_, _ = hook.StripWrappers(cmd, cfg.WrapperPatterns)
@@ -88,7 +88,7 @@ func FuzzCheckSafe(f *testing.F) {
 	f.Add("")
 	f.Add("unknown-command")
 
-	f.Fuzz(func(t *testing.T, cmd string) {
+	f.Fuzz(func(_ *testing.T, cmd string) {
 		cfg := getTestConfig()
 		_ = hook.CheckSafe(cmd, cfg.SafeCommands)
 	})
@@ -105,7 +105,7 @@ func FuzzCheckDeny(f *testing.F) {
 	f.Add("git status")
 	f.Add("")
 
-	f.Fuzz(func(t *testing.T, cmd string) {
+	f.Fuzz(func(_ *testing.T, cmd string) {
 		cfg := getTestConfig()
 		_ = hook.CheckDeny(cmd, cfg.DenyPatterns)
 	})
