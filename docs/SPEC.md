@@ -600,13 +600,17 @@ just ci           # Full CI simulation
 - Stripped binaries with version info via ldflags
 - CGO disabled for static builds
 - GitHub Releases with auto-generated changelog
-- Homebrew tap: `dgerlanc/homebrew-tap`
+- Homebrew tap: `dgerlanc/homebrew-tap` (formula auto-updated on release)
 
 ### 11.3 CI/CD
 
 **GitHub Actions Workflows**:
 - `ci.yml` - Push/PR: format check, tests, build verification
-- `release.yml` - Tags: GoReleaser publish
+- `release.yml` - Tags: GoReleaser publish + Homebrew tap update
+
+**Required Secrets**:
+- `GITHUB_TOKEN` - Automatic, used for creating GitHub releases
+- `HOMEBREW_TAP_TOKEN` - PAT with `contents: write` on `dgerlanc/homebrew-tap`, used by GoReleaser to push the updated formula
 
 ---
 
