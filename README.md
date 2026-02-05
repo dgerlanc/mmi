@@ -18,6 +18,12 @@ This project was inspired by this [post](https://matthewrocklin.com/ai-zealotry/
 
 ## Installation
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew install dgerlanc/tap/mmi
+```
+
 ### From Source
 
 ``` bash
