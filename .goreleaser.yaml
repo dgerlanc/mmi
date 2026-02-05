@@ -68,6 +68,7 @@ brews:
     repository:
       owner: dgerlanc
       name: homebrew-tap
+      directory: Formula
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/dgerlanc/mmi
     description: "Claude Code Bash command approval hook"
