@@ -13,3 +13,5 @@ bench.txt
 
 # GoReleaser artifacts
 dist/
+
+tmp/
