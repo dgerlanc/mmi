@@ -1528,6 +1528,41 @@ commands = ["ls"]
 	}
 }
 
+func TestProcessWithResultAuditConfigPathEmptyWhenConfigDirFails(t *testing.T) {
+	config.Reset()
+
+	// Unset both MMI_CONFIG and HOME so GetConfigDir() fails
+	origConfig := os.Getenv("MMI_CONFIG")
+	origHome := os.Getenv("HOME")
+	os.Unsetenv("MMI_CONFIG")
+	os.Unsetenv("HOME")
+	defer func() {
+		os.Setenv("MMI_CONFIG", origConfig)
+		os.Setenv("HOME", origHome)
+		config.Reset()
+	}()
+
+	config.Init()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	// When GetConfigDir fails, no config path can be determined
+	if entry.ConfigPath != "" {
+		t.Errorf("Expected empty ConfigPath when GetConfigDir fails, got %q", entry.ConfigPath)
+	}
+	// But there should be a config error
+	if entry.ConfigError == "" {
+		t.Error("Expected ConfigError to be non-empty when GetConfigDir fails")
+	}
+}
+
 func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
 	config.Reset()
 

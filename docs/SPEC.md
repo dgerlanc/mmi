@@ -122,15 +122,19 @@ type SpecificOutput struct {
 
 ```go
 type Entry struct {
-    Version    int       `json:"version"`
-    ToolUseID  string    `json:"tool_use_id"`
-    SessionID  string    `json:"session_id"`
-    Timestamp  time.Time `json:"timestamp"`
-    DurationMs float64   `json:"duration_ms"`
-    Command    string    `json:"command"`
-    Approved   bool      `json:"approved"`
-    Segments   []Segment `json:"segments"`
-    Cwd        string    `json:"cwd"`
+    Version     int       `json:"version"`
+    ToolUseID   string    `json:"tool_use_id"`
+    SessionID   string    `json:"session_id"`
+    Timestamp   time.Time `json:"timestamp"`
+    DurationMs  float64   `json:"duration_ms"`
+    Command     string    `json:"command"`
+    Approved    bool      `json:"approved"`
+    Segments    []Segment `json:"segments"`
+    Cwd         string    `json:"cwd"`
+    Input       string    `json:"input"`
+    Output      string    `json:"output"`
+    ConfigPath  string    `json:"config_path"`
+    ConfigError string    `json:"config_error,omitempty"`
 }
 
 type Segment struct {
@@ -450,7 +454,10 @@ JSON-lines (one JSON object per line):
       "match": {"type": "simple", "pattern": "^ls\\b", "name": "ls"}
     }
   ],
-  "cwd": "/home/user/project"
+  "cwd": "/home/user/project",
+  "input": "{...}",
+  "output": "{...}",
+  "config_path": "/home/user/.config/mmi/config.toml"
 }
 ```
 
@@ -467,6 +474,10 @@ JSON-lines (one JSON object per line):
 | `approved` | Boolean approval result |
 | `segments` | Array of segment details |
 | `cwd` | Current working directory |
+| `input` | Raw JSON input from Claude Code |
+| `output` | JSON output sent back to Claude Code |
+| `config_path` | Path to the config file used |
+| `config_error` | Config parse error message (omitted if valid) |
 
 ### 8.4 Segment Fields
 
