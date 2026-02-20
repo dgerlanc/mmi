@@ -32,6 +32,8 @@ var (
 	globalConfig *Config
 	// configInitialized tracks whether config has been loaded
 	configInitialized bool
+	// globalInitError stores any error from the last Init() call
+	globalInitError error
 )
 
 // GetConfigDir returns the config directory path.
@@ -361,6 +363,7 @@ func Init() error {
 	if err != nil {
 		logger.Debug("failed to get config dir, using embedded defaults", "error", err)
 		globalConfig = loadEmbeddedDefaults()
+		globalInitError = err
 		configInitialized = true
 		return err
 	}
@@ -371,22 +374,27 @@ func Init() error {
 	if err != nil {
 		logger.Debug("failed to read config file, using embedded defaults", "path", configPath, "error", err)
 		globalConfig = loadEmbeddedDefaults()
+		initErr := fmt.Errorf("failed to read config.toml: %w", err)
+		globalInitError = initErr
 		configInitialized = true
-		return fmt.Errorf("failed to read config.toml: %w", err)
+		return initErr
 	}
 
 	globalConfig, err = LoadConfigWithDir(configData, configDir)
 	if err != nil {
 		logger.Debug("failed to parse config, using embedded defaults", "error", err)
 		globalConfig = loadEmbeddedDefaults()
+		initErr := fmt.Errorf("failed to load config: %w", err)
+		globalInitError = initErr
 		configInitialized = true
-		return fmt.Errorf("failed to load config: %w", err)
+		return initErr
 	}
 
 	logger.Debug("config loaded successfully",
 		"path", configPath,
 		"wrappers", len(globalConfig.WrapperPatterns),
 		"commands", len(globalConfig.SafeCommands))
+	globalInitError = nil
 	configInitialized = true
 	return nil
 }
@@ -400,10 +408,18 @@ func Get() *Config {
 	return globalConfig
 }
 
+// InitError returns the error from the last Init() call, if any.
+// This allows callers like the validate command to detect config parse failures
+// that Init() handled by falling back to embedded defaults.
+func InitError() error {
+	return globalInitError
+}
+
 // Reset resets the configuration state. Used for testing.
 func Reset() {
 	configInitialized = false
 	globalConfig = nil
+	globalInitError = nil
 }
 
 // GetDefaultConfig returns the embedded default configuration.
