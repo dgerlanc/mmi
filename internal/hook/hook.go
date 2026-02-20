@@ -365,17 +365,24 @@ func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 
 // logAudit logs a command decision to the audit log.
 func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput string) {
+	configPath := config.GetConfigPath()
+	var configError string
+	if err := config.InitError(); err != nil {
+		configError = err.Error()
+	}
 	audit.Log(audit.Entry{
-		Version:    AuditVersion,
-		SessionID:  sessionID,
-		ToolUseID:  toolUseID,
-		Command:    command,
-		Approved:   approved,
-		Segments:   segments,
-		DurationMs: durationMs,
-		Cwd:        cwd,
-		Input:      rawInput,
-		Output:     rawOutput,
+		Version:     AuditVersion,
+		SessionID:   sessionID,
+		ToolUseID:   toolUseID,
+		Command:     command,
+		Approved:    approved,
+		Segments:    segments,
+		DurationMs:  durationMs,
+		Cwd:         cwd,
+		Input:       rawInput,
+		Output:      rawOutput,
+		ConfigPath:  configPath,
+		ConfigError: configError,
 	})
 }
 

@@ -34,6 +34,8 @@ var (
 	configInitialized bool
 	// globalInitError stores any error from the last Init() call
 	globalInitError error
+	// globalConfigPath stores the config file path used by Init()
+	globalConfigPath string
 )
 
 // GetConfigDir returns the config directory path.
@@ -369,6 +371,7 @@ func Init() error {
 	}
 
 	configPath := filepath.Join(configDir, constants.ConfigFileName)
+	globalConfigPath = configPath
 
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -415,11 +418,18 @@ func InitError() error {
 	return globalInitError
 }
 
+// GetConfigPath returns the config file path used by Init().
+// Returns empty string if Init() has not been called or after Reset().
+func GetConfigPath() string {
+	return globalConfigPath
+}
+
 // Reset resets the configuration state. Used for testing.
 func Reset() {
 	configInitialized = false
 	globalConfig = nil
 	globalInitError = nil
+	globalConfigPath = ""
 }
 
 // GetDefaultConfig returns the embedded default configuration.

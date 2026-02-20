@@ -25,17 +25,19 @@ const TimestampFormat = "2006-01-02T15:04:05.0Z07:00"
 
 // Entry represents a single audit log entry (v1 format).
 type Entry struct {
-	Version    int       `json:"version"`
-	ToolUseID  string    `json:"tool_use_id"`
-	SessionID  string    `json:"session_id"`
-	Timestamp  string    `json:"timestamp"`
-	DurationMs float64   `json:"duration_ms"`
-	Command    string    `json:"command"`
-	Approved   bool      `json:"approved"`
-	Segments   []Segment `json:"segments"`
-	Cwd        string    `json:"cwd"`
-	Input      string    `json:"input"`
-	Output     string    `json:"output"`
+	Version     int       `json:"version"`
+	ToolUseID   string    `json:"tool_use_id"`
+	SessionID   string    `json:"session_id"`
+	Timestamp   string    `json:"timestamp"`
+	DurationMs  float64   `json:"duration_ms"`
+	Command     string    `json:"command"`
+	Approved    bool      `json:"approved"`
+	Segments    []Segment `json:"segments"`
+	Cwd         string    `json:"cwd"`
+	Input       string    `json:"input"`
+	Output      string    `json:"output"`
+	ConfigPath  string    `json:"config_path"`
+	ConfigError string    `json:"config_error,omitempty"`
 }
 
 // Segment represents a single command segment within a chained command.

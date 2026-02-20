@@ -391,3 +391,53 @@ commands = []
 		t.Errorf("error should reference commands.simple[2], got: %v", err)
 	}
 }
+
+func TestGetConfigPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	validConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	Reset()
+	defer Reset()
+	if err := Init(); err != nil {
+		t.Fatalf("Init() returned error: %v", err)
+	}
+
+	got := GetConfigPath()
+	want := filepath.Join(tmpDir, "config.toml")
+	if got != want {
+		t.Errorf("GetConfigPath() = %q, want %q", got, want)
+	}
+}
+
+func TestGetConfigPathAfterReset(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	validConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	Reset()
+	Init()
+	Reset()
+
+	if got := GetConfigPath(); got != "" {
+		t.Errorf("GetConfigPath() after Reset() = %q, want empty string", got)
+	}
+}
