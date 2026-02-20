@@ -1498,3 +1498,76 @@ commands = ["ls"]
 
 	_ = logPath // Used by setupTestAudit
 }
+
+func TestProcessWithResultAuditConfigPath(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[commands]
+[[commands.simple]]
+name = "ls"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if entry.ConfigPath == "" {
+		t.Error("Expected ConfigPath to be non-empty")
+	}
+	if !strings.HasSuffix(entry.ConfigPath, "config.toml") {
+		t.Errorf("ConfigPath = %q, want path ending in config.toml", entry.ConfigPath)
+	}
+	if entry.ConfigError != "" {
+		t.Errorf("ConfigError = %q, want empty string for valid config", entry.ConfigError)
+	}
+}
+
+func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
+	config.Reset()
+
+	// Set up a directory with invalid TOML
+	tmpDir, err := os.MkdirTemp("", "mmi-config-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfig := os.Getenv("MMI_CONFIG")
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer func() {
+		os.Setenv("MMI_CONFIG", origConfig)
+		config.Reset()
+	}()
+
+	invalidConfig := `bad toml {{`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	config.Init()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	ProcessWithResult(strings.NewReader(input))
+
+	entry := readLastAuditEntry(t, logPath)
+
+	if entry.ConfigPath == "" {
+		t.Error("Expected ConfigPath to be non-empty even with invalid config")
+	}
+	if entry.ConfigError == "" {
+		t.Error("Expected ConfigError to be non-empty for invalid config")
+	}
+	if !strings.Contains(entry.ConfigError, "failed to load config") {
+		t.Errorf("ConfigError = %q, want error containing 'failed to load config'", entry.ConfigError)
+	}
+}

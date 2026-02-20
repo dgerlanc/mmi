@@ -1017,3 +1017,110 @@ func TestLogWritesOutputField(t *testing.T) {
 		t.Errorf("Output = %q, want %q", parsed.Output, rawOutput)
 	}
 }
+
+func TestEntryConfigFieldsSerialization(t *testing.T) {
+	entry := Entry{
+		Version:     1,
+		ToolUseID:   "tool-123",
+		SessionID:   "session-456",
+		Timestamp:   "2025-01-15T10:30:00.0Z",
+		Command:     "ls",
+		Approved:    true,
+		Cwd:         "/home",
+		ConfigPath:  "/home/user/.config/mmi/config.toml",
+		ConfigError: "failed to load config: bad toml",
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if parsed.ConfigPath != "/home/user/.config/mmi/config.toml" {
+		t.Errorf("ConfigPath = %q, want %q", parsed.ConfigPath, "/home/user/.config/mmi/config.toml")
+	}
+	if parsed.ConfigError != "failed to load config: bad toml" {
+		t.Errorf("ConfigError = %q, want %q", parsed.ConfigError, "failed to load config: bad toml")
+	}
+}
+
+func TestEntryConfigErrorOmitEmpty(t *testing.T) {
+	entry := Entry{
+		Version:    1,
+		ToolUseID:  "tool-123",
+		SessionID:  "session-456",
+		Timestamp:  "2025-01-15T10:30:00.0Z",
+		Command:    "ls",
+		Approved:   true,
+		Cwd:        "/home",
+		ConfigPath: "/home/user/.config/mmi/config.toml",
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, `"config_path"`) {
+		t.Error("Expected config_path field to be present")
+	}
+	if strings.Contains(jsonStr, `"config_error"`) {
+		t.Error("Expected config_error field to be omitted when empty")
+	}
+}
+
+func TestLogWritesConfigFields(t *testing.T) {
+	defer Reset()
+
+	tmpDir, err := os.MkdirTemp("", "mmi-audit-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logPath := filepath.Join(tmpDir, "audit.log")
+
+	if err := Init(logPath, false); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	entry := Entry{
+		Version:     1,
+		ToolUseID:   "tool-xyz",
+		SessionID:   "sess-abc",
+		Command:     "git status",
+		Approved:    true,
+		Cwd:         "/home/user",
+		ConfigPath:  "/home/user/.config/mmi/config.toml",
+		ConfigError: "bad config",
+	}
+
+	if err := Log(entry); err != nil {
+		t.Errorf("Log() error = %v", err)
+	}
+
+	Close()
+
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	var parsed Entry
+	if err := json.Unmarshal(content[:len(content)-1], &parsed); err != nil {
+		t.Fatalf("Failed to parse entry: %v", err)
+	}
+
+	if parsed.ConfigPath != "/home/user/.config/mmi/config.toml" {
+		t.Errorf("ConfigPath = %q, want %q", parsed.ConfigPath, "/home/user/.config/mmi/config.toml")
+	}
+	if parsed.ConfigError != "bad config" {
+		t.Errorf("ConfigError = %q, want %q", parsed.ConfigError, "bad config")
+	}
+}
