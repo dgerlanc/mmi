@@ -25,8 +25,8 @@ func init() {
 
 func runValidate(cmd *cobra.Command, args []string) error {
 	cfg := config.Get()
-	if cfg == nil {
-		return fmt.Errorf("failed to load configuration")
+	if err := config.InitError(); err != nil {
+		return fmt.Errorf("configuration error: %w", err)
 	}
 
 	fmt.Println("Configuration valid!")

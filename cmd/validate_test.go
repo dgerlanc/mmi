@@ -213,6 +213,64 @@ commands = ["ls"]
 	}
 }
 
+func TestRunValidateWithInvalidConfig(t *testing.T) {
+	resetGlobalState()
+
+	// Create temp directory with invalid TOML config
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	// Write an invalid config file (bad TOML syntax)
+	invalidConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["foo""]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Initialize config (will fail but set globalConfig to empty defaults)
+	config.Reset()
+	config.Init()
+
+	// Run validate
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	if err == nil {
+		t.Fatal("runValidate() should return error for invalid config")
+	}
+
+	if !strings.Contains(err.Error(), "configuration error") {
+		t.Errorf("error should contain 'configuration error', got: %v", err)
+	}
+}
+
+func TestRunValidateWithMissingConfig(t *testing.T) {
+	resetGlobalState()
+
+	// Point to empty directory (no config.toml)
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	config.Reset()
+	config.Init()
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	if err == nil {
+		t.Fatal("runValidate() should return error for missing config")
+	}
+
+	if !strings.Contains(err.Error(), "configuration error") {
+		t.Errorf("error should contain 'configuration error', got: %v", err)
+	}
+}
+
 func TestValidateCmdUsage(t *testing.T) {
 	if validateCmd.Use != "validate" {
 		t.Errorf("validateCmd.Use = %q, want 'validate'", validateCmd.Use)

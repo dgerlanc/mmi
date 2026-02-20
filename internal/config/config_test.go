@@ -7,6 +7,108 @@ import (
 	"testing"
 )
 
+func TestInitErrorNilOnValidConfig(t *testing.T) {
+	// Create temp directory with valid config
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	validConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	Reset()
+	if err := Init(); err != nil {
+		t.Fatalf("Init() returned error: %v", err)
+	}
+
+	if InitError() != nil {
+		t.Errorf("InitError() = %v, want nil", InitError())
+	}
+}
+
+func TestInitErrorOnInvalidTOML(t *testing.T) {
+	// Create temp directory with invalid TOML
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	invalidConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["foo""]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	Reset()
+	err := Init()
+	if err == nil {
+		t.Fatal("Init() should have returned an error for invalid TOML")
+	}
+
+	initErr := InitError()
+	if initErr == nil {
+		t.Fatal("InitError() should return non-nil error after failed Init()")
+	}
+
+	if !strings.Contains(initErr.Error(), "failed to load config") {
+		t.Errorf("InitError() = %v, want error containing 'failed to load config'", initErr)
+	}
+}
+
+func TestInitErrorOnMissingConfigFile(t *testing.T) {
+	// Point to a directory with no config.toml
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	Reset()
+	err := Init()
+	if err == nil {
+		t.Fatal("Init() should have returned an error for missing config file")
+	}
+
+	initErr := InitError()
+	if initErr == nil {
+		t.Fatal("InitError() should return non-nil error after failed Init()")
+	}
+
+	if !strings.Contains(initErr.Error(), "failed to read config.toml") {
+		t.Errorf("InitError() = %v, want error containing 'failed to read config.toml'", initErr)
+	}
+}
+
+func TestResetClearsInitError(t *testing.T) {
+	// Create a broken config to produce an error
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(`bad toml {{`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	Reset()
+	Init()
+
+	if InitError() == nil {
+		t.Fatal("expected non-nil InitError before Reset")
+	}
+
+	Reset()
+
+	if InitError() != nil {
+		t.Errorf("InitError() = %v after Reset(), want nil", InitError())
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	data := []byte(`
 [[commands.simple]]
