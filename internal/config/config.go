@@ -264,6 +264,9 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			cfg.WrapperPatterns = append(cfg.WrapperPatterns, includeCfg.WrapperPatterns...)
 			cfg.SafeCommands = append(cfg.SafeCommands, includeCfg.SafeCommands...)
 			cfg.DenyPatterns = append(cfg.DenyPatterns, includeCfg.DenyPatterns...)
+			// SubshellAllowAll: unconditional assignment — last value wins.
+			// If an included file omits [subshell], its zero value (false) will
+			// overwrite a previous include's true. This is the safer default.
 			cfg.SubshellAllowAll = includeCfg.SubshellAllowAll
 		}
 	}
