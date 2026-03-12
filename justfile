@@ -87,14 +87,15 @@ release-test:
 
 # Create a new release (updates changelog, tags, and pushes)
 release version:
-    @just _release-check
+    @just _release-check {{version}}
     @just _release-changelog {{version}}
     @just _release-tag {{version}}
     @echo "Release v{{version}} complete! GitHub Actions will build and publish."
 
 # Pre-release checks
-_release-check:
+_release-check version:
     @echo "Running pre-release checks..."
+    @echo "{{version}}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || (echo "Error: Version must be in semver format (e.g., 0.2.4), without 'v' prefix" && exit 1)
     @test -z "$(git status --porcelain)" || (echo "Error: Working directory not clean" && exit 1)
     @test "$(git branch --show-current)" = "main" || (echo "Error: Must be on main branch" && exit 1)
     @just ci
@@ -117,7 +118,7 @@ _release-tag version:
 # Dry-run release (shows what would happen without making changes)
 release-dry-run version:
     @echo "=== DRY RUN: Release v{{version}} ==="
-    @just _release-check
+    @just _release-check {{version}}
     @echo "Would update CHANGELOG.md with version {{version}} and date $(date +%Y-%m-%d)"
     @echo "Would commit: 'Release v{{version}}'"
     @echo "Would create tag: v{{version}}"
