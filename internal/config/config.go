@@ -25,6 +25,8 @@ type Config struct {
 	SafeCommands []patterns.Pattern
 	// DenyPatterns are patterns that are always rejected (checked before approval)
 	DenyPatterns []patterns.Pattern
+	// SubshellAllowAll when true skips command substitution rejection
+	SubshellAllowAll bool
 }
 
 var (
@@ -288,6 +290,13 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			return nil, fmt.Errorf("failed to parse deny: %w", err)
 		}
 		cfg.DenyPatterns = append(cfg.DenyPatterns, deny...)
+	}
+
+	// Parse subshell section
+	if subshellSection, ok := raw["subshell"].(map[string]any); ok {
+		if allowAll, ok := subshellSection["allow_all"].(bool); ok {
+			cfg.SubshellAllowAll = allowAll
+		}
 	}
 
 	return cfg, nil
