@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-03-12
+
 ### Added
 - Config path and config error fields in audit log entries to help diagnose why commands are rejected when config is invalid
 - `InitError()` to expose config initialization errors for the `validate` command
