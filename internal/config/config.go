@@ -264,6 +264,7 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			cfg.WrapperPatterns = append(cfg.WrapperPatterns, includeCfg.WrapperPatterns...)
 			cfg.SafeCommands = append(cfg.SafeCommands, includeCfg.SafeCommands...)
 			cfg.DenyPatterns = append(cfg.DenyPatterns, includeCfg.DenyPatterns...)
+			cfg.SubshellAllowAll = includeCfg.SubshellAllowAll
 		}
 	}
 
