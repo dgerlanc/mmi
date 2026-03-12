@@ -1606,3 +1606,177 @@ func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
 		t.Errorf("ConfigError = %q, want error containing 'failed to load config'", entry.ConfigError)
 	}
 }
+
+func TestCommandSubstitutionRejectedByDefault(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[[commands.simple]]
+name = "git"
+commands = ["git"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "git commit -m \"$(cat <<'EOF'\nfix bug\nEOF\n)\""}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if result.Approved {
+		t.Error("Command with $() should be rejected when allow_all is false")
+	}
+
+	entry := readLastAuditEntry(t, logPath)
+	if entry.Segments[0].Rejection == nil {
+		t.Fatal("Expected rejection for command substitution")
+	}
+	if entry.Segments[0].Rejection.Code != audit.CodeCommandSubstitution {
+		t.Errorf("Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeCommandSubstitution)
+	}
+}
+
+func TestCommandSubstitutionAllowedWhenAllowAll(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[subshell]
+allow_all = true
+
+[[commands.subcommand]]
+command = "git"
+subcommands = ["commit"]
+flags = ["-m <arg>"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "git commit -m \"$(cat <<'EOF'\nfix bug\nEOF\n)\""}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if !result.Approved {
+		t.Errorf("Command with $() should be approved when allow_all is true, got output: %s", result.Output)
+	}
+
+	entry := readLastAuditEntry(t, logPath)
+	if !entry.Approved {
+		t.Error("Audit entry should show approved")
+	}
+}
+
+func TestBackticksAllowedWhenAllowAll(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[subshell]
+allow_all = true
+
+[[commands.simple]]
+name = "basic"
+commands = ["echo"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "echo ` + "`date`" + `"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if !result.Approved {
+		t.Errorf("Command with backticks should be approved when allow_all is true, got output: %s", result.Output)
+	}
+
+	entry := readLastAuditEntry(t, logPath)
+	if !entry.Approved {
+		t.Error("Audit entry should show approved")
+	}
+}
+
+func TestDenyStillRejectsWhenAllowAll(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[subshell]
+allow_all = true
+
+[[deny.simple]]
+name = "privilege escalation"
+commands = ["sudo"]
+
+[[commands.subcommand]]
+command = "git"
+subcommands = ["commit"]
+flags = ["-m <arg>"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "sudo git commit -m \"$(cat <<'EOF'\nfix\nEOF\n)\""}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if result.Approved {
+		t.Error("Denied command should still be rejected even with allow_all = true")
+	}
+
+	entry := readLastAuditEntry(t, logPath)
+	if entry.Approved {
+		t.Error("Audit entry should show rejected")
+	}
+}
+
+func TestNoMatchStillRejectsWhenAllowAll(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[subshell]
+allow_all = true
+
+[[commands.simple]]
+name = "basic"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "unknown-cmd $(echo hi)"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if result.Approved {
+		t.Error("Unknown command should still be rejected even with allow_all = true")
+	}
+
+	entry := readLastAuditEntry(t, logPath)
+	if entry.Segments[0].Rejection == nil {
+		t.Fatal("Expected rejection")
+	}
+	if entry.Segments[0].Rejection.Code != audit.CodeNoMatch {
+		t.Errorf("Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeNoMatch)
+	}
+}

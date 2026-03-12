@@ -231,7 +231,7 @@ func ProcessWithResult(r io.Reader) Result {
 			"wrappers", wrappers)
 
 		// Check for dangerous patterns (command substitution) in this segment
-		if containsDangerousPattern(segment) {
+		if !cfg.SubshellAllowAll && containsDangerousPattern(segment) {
 			logger.Debug("rejected dangerous pattern in segment", "segment", segment)
 			overallApproved = false
 			auditSegments = append(auditSegments, audit.Segment{
