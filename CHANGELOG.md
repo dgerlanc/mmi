@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Config path and config error fields in audit log entries to help diagnose why commands are rejected when config is invalid
+- `InitError()` to expose config initialization errors for the `validate` command
+- Test covering `GetConfigDir()` failure when HOME is unset
+
+### Changed
+- Updated SPEC.md to document new audit entry fields (`config_path`, `config_error`)
+
 ## [0.2.3] - 2026-02-06
 
 ## [0.2.2] - 2026-02-06
