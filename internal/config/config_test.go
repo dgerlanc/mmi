@@ -443,6 +443,89 @@ commands = ["echo"]
 	}
 }
 
+func TestLoadConfigSubshellAllowAllIncludeOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	mainConfig := []byte(`
+include = ["extra.toml"]
+
+[subshell]
+allow_all = false
+
+[[commands.simple]]
+name = "main"
+commands = ["echo"]
+`)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), mainConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extraConfig := []byte(`
+[subshell]
+allow_all = true
+`)
+	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigWithDir(mainConfig, dir)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDir failed: %v", err)
+	}
+	if cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should be false — main config overrides included file")
+	}
+}
+
+func TestLoadConfigSubshellAllowAllFromInclude(t *testing.T) {
+	dir := t.TempDir()
+
+	mainConfig := []byte(`
+include = ["extra.toml"]
+
+[[commands.simple]]
+name = "main"
+commands = ["echo"]
+`)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), mainConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extraConfig := []byte(`
+[subshell]
+allow_all = true
+`)
+	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigWithDir(mainConfig, dir)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDir failed: %v", err)
+	}
+	if !cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should be true — inherited from included file")
+	}
+}
+
+func TestLoadConfigSubshellAllowAllInvalidType(t *testing.T) {
+	data := []byte(`
+[subshell]
+allow_all = "yes"
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should be false when allow_all has invalid type")
+	}
+}
+
 func TestGetConfigPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("MMI_CONFIG", tmpDir)
