@@ -42,15 +42,29 @@ does not bypass any other security checks.
 
 **Config changes:**
 
-- Add `SubshellConfig` struct with `AllowAll bool` field to `internal/config/`
-- Add `Subshell SubshellConfig` to the top-level `Config` struct
+- Add `SubshellAllowAll bool` field to the top-level `Config` struct
+- Parse by reading `raw["subshell"]` as `map[string]any` and extracting the
+  `allow_all` key, consistent with how existing config sections are parsed
 - `[subshell]` section is optional; omitting it preserves current behavior
+  (`SubshellAllowAll` defaults to `false`)
+
+**Include merging semantics:**
+
+- When multiple config files (via `include`) define `[subshell]`, last value
+  wins — the including file's value overrides the included file's value
 
 **Hook changes:**
 
-- In per-segment evaluation, check `config.Subshell.AllowAll` before calling
-  `containsDangerousPattern()`
-- If `true`, skip the dangerous pattern check entirely for that segment
+- In the per-segment loop, add a conditional guard around the
+  `containsDangerousPattern()` call: if `config.SubshellAllowAll` is `true`,
+  skip the dangerous pattern check for that segment
+- The `dangerousPattern` regex (matching `$()` and backticks) is the single
+  check being skipped — there is no separate backtick-specific path
+
+**`mmi validate` output:**
+
+- When `SubshellAllowAll` is `true`, surface it in the validate output so
+  users can confirm their config is taking effect
 
 **Default config:**
 
@@ -63,14 +77,24 @@ does not bypass any other security checks.
 - Segments are approved/rejected through the normal pipeline
 - The active config path is already logged in audit entries
 
+**Documentation updates:**
+
+- Update `docs/SPEC.md` section 4.3 ("Dangerous Pattern Detection") and
+  section 9.1 which state "Command substitution is always rejected" to
+  reflect the new `allow_all` option
+- Update `docs/PATTERNS.md` if relevant
+
 **Tests:**
 
 - Config parsing with and without `[subshell]` section
+- Config parsing with `[subshell]` via `include` (last value wins)
 - Segment with `$(...)` rejected when `allow_all = false` (existing behavior)
 - Segment with `$(...)` approved when `allow_all = true` and outer command
   passes deny/safe checks
 - Segment with backticks approved when `allow_all = true`
-- Deny patterns still reject even when `allow_all = true`
+- Deny patterns still reject even when `allow_all = true` (e.g.,
+  `sudo git commit -m "$(cat <<'EOF'...)"` rejected because `sudo` is denied)
+- `mmi validate` output includes subshell allow_all status
 
 ### Stage 2: `allowed_commands` allowlist (future)
 
@@ -106,6 +130,15 @@ Approved `CmdSubst` byte ranges are passed to `containsDangerousPattern()`
 so it skips those ranges in its regex scan. This is defensive — if a
 substitution escapes the AST but matches the regex, it is still caught.
 
+**Interaction with `SplitCommandChain`:**
+
+`checkSubshells()` runs per-segment after `SplitCommandChain`. Both use
+`mvdan.cc/sh/v3/syntax` but parse independently — `SplitCommandChain` parses
+the full command string to split on operators, while `checkSubshells()` parses
+each resulting segment to find `CmdSubst` nodes. A future optimization could
+share the parse, but the initial implementation keeps them independent for
+simplicity.
+
 **Heredoc interaction:**
 
 - Quoted heredocs (`<<'EOF'`): content is literal. The parser produces no
@@ -113,6 +146,11 @@ substitution escapes the AST but matches the regex, it is still caught.
 - Unquoted heredocs (`<<EOF`): the parser produces `CmdSubst` nodes for any
   `$(...)` in the body. Each is checked independently against `allowed_commands`.
 - No recursive/nesting support beyond what the AST naturally provides.
+
+**Known limitation:** `allowed_commands` checks only the first word of each
+`CmdSubst` node. Commands wrapped with prefixes (e.g., `$(env cat file)`)
+would extract `env`, not `cat`. This is a known limitation; users would need
+to allowlist the prefix command.
 
 **Audit logging:**
 
@@ -131,10 +169,13 @@ New `subshell_commands` field on segment entries:
 }
 ```
 
-- `[]string` listing command names found and approved inside `$(...)`
-- Omitted from JSON when empty (consistent with `wrappers` field)
+- `SubshellCommands []string` with JSON tag `json:"subshell_commands,omitempty"`
+- Lists command names found and approved inside `$(...)`
+- Omitted from JSON when empty (consistent with `Wrappers` field)
 - Populated even when `allow_all = true` for visibility
 - Duplicates included (two `$(cat ...)` → `["cat", "cat"]`)
+- Adding an `omitempty` `[]string` field is additive and does not require an
+  audit format version bump
 
 ## What's NOT in scope
 
