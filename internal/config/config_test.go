@@ -392,6 +392,57 @@ commands = []
 	}
 }
 
+func TestLoadConfigSubshellDefaultsFalse(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should default to false")
+	}
+}
+
+func TestLoadConfigSubshellAllowAllTrue(t *testing.T) {
+	data := []byte(`
+[subshell]
+allow_all = true
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if !cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should be true when allow_all = true")
+	}
+}
+
+func TestLoadConfigSubshellAllowAllFalse(t *testing.T) {
+	data := []byte(`
+[subshell]
+allow_all = false
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.SubshellAllowAll {
+		t.Error("SubshellAllowAll should be false when allow_all = false")
+	}
+}
+
 func TestGetConfigPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("MMI_CONFIG", tmpDir)
