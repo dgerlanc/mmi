@@ -94,3 +94,10 @@ name = "shell builtin"
 [[commands.regex]]
 pattern = "^[A-Z_][A-Z0-9_]*=\S*$"
 name = "var assignment"
+
+# ============================================================
+# SUBSHELL - control command substitution ($() and backtick) handling
+# ============================================================
+
+# [subshell]
+# allow_all = false  # set to true to permit all command substitution
