@@ -215,11 +215,20 @@ Claude Code Hook Input (JSON)
 
 ### 4.3 Dangerous Pattern Detection
 
-Command substitution is always rejected:
+Command substitution is rejected by default:
 - `$(...)` syntax
 - Backtick syntax
 
 **Per-segment checking**: Dangerous patterns are checked for each segment individually after the command is parsed and split. This ensures all segments are evaluated and logged in the audit trail, even if an earlier segment contains command substitution.
+
+**Subshell configuration**: The `[subshell]` config section controls command substitution handling:
+
+```toml
+[subshell]
+allow_all = false  # default; set true to permit all $() and backticks
+```
+
+When `allow_all = true`, the dangerous pattern check is skipped entirely. Commands still pass through the deny → wrapper → safe pipeline. This is useful for workflows where Claude Code generates commands like `git commit -m "$(cat <<'EOF' ... EOF)"`.
 
 **Exception**: Content inside quoted heredocs (single or double quoted delimiters) is treated as literal text:
 ```bash
@@ -284,6 +293,10 @@ flags = ["-C <arg>"]
 [[commands.regex]]
 pattern = '^(true|false|exit(\s+\d+)?)$'
 name = "shell builtin"
+
+# Subshell configuration (optional)
+# [subshell]
+# allow_all = false  # set to true to permit all command substitution
 ```
 
 ### 5.3 Pattern Types
@@ -535,7 +548,7 @@ When parsing logs, check for the `version` field to determine format:
 - Deny patterns checked **first** and override all approvals
 - Unrecognized commands automatically **rejected**
 - Unparseable commands (incomplete syntax, unclosed quotes) **rejected**
-- Command substitution always **rejected** (except in quoted heredocs)
+- Command substitution **rejected** by default (configurable via `[subshell] allow_all`)
 - Command chains only approved if **ALL segments** are safe
 - Only **explicitly allowlisted** patterns are approved
 
