@@ -32,6 +32,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	fmt.Println("Configuration valid!")
 	fmt.Println()
 
+	// Show subshell settings
+	fmt.Printf("Subshell allow all: %v\n", cfg.SubshellAllowAll)
+	fmt.Println()
+
 	// Show deny patterns
 	fmt.Printf("Deny patterns: %d\n", len(cfg.DenyPatterns))
 	for _, p := range cfg.DenyPatterns {

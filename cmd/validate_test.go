@@ -285,6 +285,93 @@ func TestValidateCmdUsage(t *testing.T) {
 	}
 }
 
+func TestRunValidateShowsSubshellAllowAll(t *testing.T) {
+	resetGlobalState()
+
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	testConfig := `
+[subshell]
+allow_all = true
+
+[[commands.simple]]
+name = "test"
+commands = ["ls"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	config.Init()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("runValidate() error = %v", err)
+	}
+
+	if !strings.Contains(output, "Subshell allow all: true") {
+		t.Errorf("expected 'Subshell allow all: true' in output, got:\n%s", output)
+	}
+}
+
+func TestRunValidateShowsSubshellAllowAllFalse(t *testing.T) {
+	resetGlobalState()
+
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	testConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["ls"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	config.Init()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("runValidate() error = %v", err)
+	}
+
+	if !strings.Contains(output, "Subshell allow all: false") {
+		t.Errorf("expected 'Subshell allow all: false' in output, got:\n%s", output)
+	}
+}
+
 func TestRunValidateWithEmptyConfig(t *testing.T) {
 	resetGlobalState()
 
