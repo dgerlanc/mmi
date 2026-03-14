@@ -1607,6 +1607,60 @@ func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestProcessWithResultConfigErrorInOutput(t *testing.T) {
+	config.Reset()
+
+	// Set up a directory with invalid TOML
+	tmpDir, err := os.MkdirTemp("", "mmi-config-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfig := os.Getenv("MMI_CONFIG")
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer func() {
+		os.Setenv("MMI_CONFIG", origConfig)
+		config.Reset()
+	}()
+
+	invalidConfig := `bad toml {{`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	config.Init()
+
+	// Disable audit logging for this test
+	audit.Init("", true)
+
+	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+	if result.Approved {
+		t.Error("Command should not be approved when config is invalid")
+	}
+
+	// Parse the output JSON to verify it contains config error info
+	var output Output
+	if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
+		t.Fatalf("Failed to parse output JSON: %v", err)
+	}
+
+	if output.HookSpecificOutput.PermissionDecision != DecisionAsk {
+		t.Errorf("PermissionDecision = %q, want %q", output.HookSpecificOutput.PermissionDecision, DecisionAsk)
+	}
+	if !strings.Contains(output.HookSpecificOutput.PermissionDecisionReason, "mmi config error") {
+		t.Errorf("PermissionDecisionReason = %q, want it to contain 'mmi config error'", output.HookSpecificOutput.PermissionDecisionReason)
+	}
+	if output.HookSpecificOutput.AdditionalContext == "" {
+		t.Error("Expected AdditionalContext to be non-empty when config is invalid")
+	}
+	if !strings.Contains(output.HookSpecificOutput.AdditionalContext, "mmi validate") {
+		t.Errorf("AdditionalContext = %q, want it to contain 'mmi validate'", output.HookSpecificOutput.AdditionalContext)
+	}
+}
+
 func TestCommandSubstitutionRejectedByDefault(t *testing.T) {
 	cleanupConfig := setupTestConfig(t, `
 [[commands.simple]]
