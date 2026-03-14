@@ -68,6 +68,7 @@ type SpecificOutput struct {
 	HookEventName            string `json:"hookEventName"`
 	PermissionDecision       string `json:"permissionDecision"`
 	PermissionDecisionReason string `json:"permissionDecisionReason"`
+	AdditionalContext        string `json:"additionalContext,omitempty"`
 }
 
 // dangerousPattern matches command substitution syntax
@@ -200,6 +201,7 @@ func ProcessWithResult(r io.Reader) Result {
 	logger.Debug("processing command", "command", cmd)
 
 	cfg := config.Get()
+	configErr := config.InitError()
 
 	cmdSegments, err := SplitCommandChain(cmd)
 	if err != nil {
@@ -306,6 +308,11 @@ func ProcessWithResult(r io.Reader) Result {
 		var output string
 		if hasDenyMatch {
 			output = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"command matches deny list"}}`
+		} else if configErr != nil {
+			output = FormatAskWithContext(
+				"mmi config error: "+configErr.Error(),
+				"WARNING: mmi configuration failed to load. All commands require manual approval until the config is fixed. Run 'mmi validate' to see the error details.",
+			)
 		} else {
 			output = FormatAsk("command not in allow list")
 		}
@@ -398,6 +405,24 @@ func FormatApproval(reason string) string {
 	data, err := json.Marshal(output)
 	if err != nil {
 		logger.Debug("failed to marshal approval output", "error", err)
+		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"internal error"}}`
+	}
+	return string(data)
+}
+
+// FormatAskWithContext returns the JSON ask output with additional context for Claude.
+func FormatAskWithContext(reason, context string) string {
+	output := Output{
+		HookSpecificOutput: SpecificOutput{
+			HookEventName:            EventPreToolUse,
+			PermissionDecision:       DecisionAsk,
+			PermissionDecisionReason: reason,
+			AdditionalContext:        context,
+		},
+	}
+	data, err := json.Marshal(output)
+	if err != nil {
+		logger.Debug("failed to marshal ask output with context", "error", err)
 		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"internal error"}}`
 	}
 	return string(data)
