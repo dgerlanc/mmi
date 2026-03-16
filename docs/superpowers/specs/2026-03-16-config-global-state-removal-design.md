@@ -34,17 +34,17 @@ Replace the global singleton with a pure constructor that returns a value. Threa
 func Load() (*Config, string, error) {
     configDir, err := GetConfigDir()
     if err != nil {
-        return nil, "", fmt.Errorf("resolving config directory: %w", err)
+        // Always return usable defaults so callers never get nil config.
+        return loadEmbeddedDefaults(), "", fmt.Errorf("resolving config directory: %w", err)
     }
     configPath := filepath.Join(configDir, constants.ConfigFileName)
 
     data, err := os.ReadFile(configPath)
     if err != nil {
         if os.IsNotExist(err) {
-            cfg := loadEmbeddedDefaults()
-            return cfg, "", nil
+            return loadEmbeddedDefaults(), "", nil
         }
-        return nil, "", err
+        return loadEmbeddedDefaults(), "", err
     }
 
     cfg, err := LoadConfigWithDir(data, configDir)
