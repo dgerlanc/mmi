@@ -49,7 +49,9 @@ func Load() (*Config, string, error) {
 
     cfg, err := LoadConfigWithDir(data, configDir)
     if err != nil {
-        return nil, configPath, err
+        // Return embedded defaults on parse error (deny-all) so callers always
+        // get a usable config. Matches current Init() fallback behavior.
+        return loadEmbeddedDefaults(), configPath, err
     }
     return cfg, configPath, nil
 }
@@ -171,12 +173,19 @@ The `runHook` function in `cmd/run.go` is removed. Its logic is inlined into the
 
 **Remove `IsVerbose()` and `IsDryRun()`** — these exported functions access the package-level globals being removed. They are only used in `cmd` package tests (`root_test.go`), not by any external package. The tests that exercise them are deleted.
 
-**Remove `Execute()`** — no longer needed as an exported function.
+**Keep `Execute()` as the public entry point** — it internally calls `buildRootCmd().Execute()`, keeping the builder as an unexported implementation detail. This preserves the current `main.go` pattern:
 
-**`main.go`** becomes:
+```go
+// cmd/root.go
+func Execute() error {
+    return buildRootCmd().Execute()
+}
+```
+
+`main.go` is unchanged:
 ```go
 func main() {
-    if err := buildRootCmd().Execute(); err != nil {
+    if err := cmd.Execute(); err != nil {
         os.Exit(1)
     }
 }
