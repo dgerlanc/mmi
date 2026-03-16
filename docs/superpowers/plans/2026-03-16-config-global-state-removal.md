@@ -612,6 +612,8 @@ Remove runHook (inlined), IsVerbose, IsDryRun, package-level flags."
 
 ## Chunk 2: Test updates
 
+> **Note:** Tasks 4-8 update tests across many files. Intermediate commits between tasks may leave test files that don't compile (e.g., Task 6 removes `TestMain` but Task 7 hasn't updated `benchmark_test.go` yet). This is acceptable — `go build ./...` (non-test) will pass at each commit. Full `go test ./...` will only pass after Task 8 is committed. If you prefer a compilable tree at every commit, batch Tasks 4-8 into a single commit.
+
 ### Task 4: Update `internal/testutil`
 
 **Files:**
@@ -744,6 +746,8 @@ rootCmd.SetArgs([]string{"validate"})
 The `t.Setenv("MMI_CONFIG", tmpDir)` pattern provides the config. Tests that capture stdout should use `rootCmd.SetOut(&buf)` instead of `os.Pipe`.
 
 Specifically rewrite: `TestRunValidateWithValidConfig`, `TestRunValidateShowsPatternCounts`, `TestRunValidateShowsPatternNames`, `TestRunValidateWithInvalidConfig`, `TestRunValidateWithMissingConfig`, `TestValidateCmdUsage` (references `validateCmd`), `TestRunValidateShowsSubshellAllowAll`, `TestRunValidateShowsSubshellAllowAllFalse`, `TestRunValidateWithEmptyConfig`.
+
+**Behavioral change for `TestRunValidateWithMissingConfig`:** With the new `Load()` semantics, a missing config file returns nil error (embedded defaults). This means `mmi validate` with no config file now succeeds and shows zero patterns instead of erroring. This is intentional — a missing config is empty config (deny-all), not invalid config. Update the test to expect success with zero patterns.
 
 - [ ] **Step 4: Rewrite `cmd/init_test.go`**
 
