@@ -12,14 +12,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var initForce bool
-var initConfigOnly bool
-var initClaudeSettings string
+func buildInitCmd() *cobra.Command {
+	var (
+		force          bool
+		configOnly     bool
+		claudeSettings string
+	)
 
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a new mmi configuration file",
-	Long: `Initialize creates a new mmi configuration file with default settings.
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize a new mmi configuration file",
+		Long: `Initialize creates a new mmi configuration file with default settings.
 
 The config file is written to ~/.config/mmi/config.toml (or the path
 specified by MMI_CONFIG environment variable).
@@ -31,17 +34,19 @@ and validate commands before execution.
 Use --force to overwrite an existing configuration file.
 Use --config-only to skip configuring Claude Code settings.
 Use --claude-settings to specify a custom path to Claude's settings.json.`,
-	RunE: runInit,
+		RunE: func(c *cobra.Command, args []string) error {
+			return runInit(c, args, force, configOnly, claudeSettings)
+		},
+	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config file")
+	cmd.Flags().BoolVar(&configOnly, "config-only", false, "Only write config.toml, skip Claude settings")
+	cmd.Flags().StringVar(&claudeSettings, "claude-settings", "", "Path to Claude settings.json (default: ~/.claude/settings.json)")
+
+	return cmd
 }
 
-func init() {
-	rootCmd.AddCommand(initCmd)
-	initCmd.Flags().BoolVarP(&initForce, "force", "f", false, "Overwrite existing config file")
-	initCmd.Flags().BoolVar(&initConfigOnly, "config-only", false, "Only write config.toml, skip Claude settings")
-	initCmd.Flags().StringVar(&initClaudeSettings, "claude-settings", "", "Path to Claude settings.json (default: ~/.claude/settings.json)")
-}
-
-func runInit(cmd *cobra.Command, args []string) error {
+func runInit(cmd *cobra.Command, args []string, force, configOnly bool, claudeSettings string) error {
 	configDir, err := config.GetConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get config directory: %w", err)
@@ -56,7 +61,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle config file creation/update
-	if configExists && !initForce {
+	if configExists && !force {
 		fmt.Printf("Config file already exists at %s (use --force to overwrite)\n", configPath)
 	} else {
 		// Create directory if needed
@@ -74,8 +79,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure Claude settings unless --config-only was passed
-	if !initConfigOnly {
-		if err := configureClaudeSettings(); err != nil {
+	if !configOnly {
+		if err := configureClaudeSettings(claudeSettings); err != nil {
 			return err
 		}
 	}
@@ -86,9 +91,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 // getClaudeSettingsPath returns the path to Claude's settings.json file.
 // It checks the --claude-settings flag first, then falls back to
 // ~/.claude/settings.json.
-func getClaudeSettingsPath() (string, error) {
-	if initClaudeSettings != "" {
-		return initClaudeSettings, nil
+func getClaudeSettingsPath(claudeSettings string) (string, error) {
+	if claudeSettings != "" {
+		return claudeSettings, nil
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -186,8 +191,8 @@ func addMMIHook(settings map[string]any) map[string]any {
 
 // configureClaudeSettings adds the mmi hook to Claude's settings.json.
 // It preserves existing settings and only adds the hook if not already present.
-func configureClaudeSettings() error {
-	settingsPath, err := getClaudeSettingsPath()
+func configureClaudeSettings(claudeSettings string) error {
+	settingsPath, err := getClaudeSettingsPath(claudeSettings)
 	if err != nil {
 		return err
 	}

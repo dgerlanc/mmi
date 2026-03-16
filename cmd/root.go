@@ -2,24 +2,35 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
+	"github.com/dgerlanc/mmi/internal/hook"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/spf13/cobra"
 )
 
-var (
-	// Global flags
-	verbose    bool
-	dryRun     bool
-	noAuditLog bool
-)
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() error {
+	return buildRootCmd().Execute()
+}
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "mmi",
-	Short: "Mother May I? - Claude Code Bash command approval hook",
-	Long: `MMI (Mother May I?) is a PreToolUse hook for Claude Code that
+func buildRootCmd() *cobra.Command {
+	var (
+		verbose    bool
+		dryRun     bool
+		noAuditLog bool
+		cfg        *config.Config
+		cfgPath    string
+		cfgErr     error
+	)
+
+	rootCmd := &cobra.Command{
+		Use:   "mmi",
+		Short: "Mother May I? - Claude Code Bash command approval hook",
+		Long: `MMI (Mother May I?) is a PreToolUse hook for Claude Code that
 approves or rejects Bash commands based on configurable patterns.
 
 When called without arguments, it reads a JSON command from stdin and outputs
@@ -32,45 +43,38 @@ Usage in ~/.claude/settings.json:
       "hooks": [{"type": "command", "command": "mmi"}]
     }]
   }`,
-	// Run the hook by default when no subcommand is given
-	Run: runHook,
-	// Silence usage on errors
-	SilenceUsage: true,
-}
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			logger.Init(logger.Options{Verbose: verbose})
+			cfg, cfgPath, cfgErr = config.Load()
+			audit.Init("", noAuditLog)
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			result := hook.ProcessWithResult(os.Stdin, cfg, cfgPath, cfgErr)
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() error {
-	return rootCmd.Execute()
-}
+			if dryRun {
+				if result.Approved {
+					fmt.Fprintf(os.Stderr, "APPROVED: %s (reason: %s)\n", result.Command, result.Reason)
+				} else if result.Command != "" {
+					fmt.Fprintf(os.Stderr, "REJECTED: %s\n", result.Command)
+				} else {
+					fmt.Fprintf(os.Stderr, "REJECTED: (no command parsed)\n")
+				}
+				return
+			}
 
-func init() {
-	// Initialize before running any command
-	cobra.OnInitialize(initApp)
+			fmt.Print(result.Output)
+		},
+		SilenceUsage: true,
+	}
 
-	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output (debug logging)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Test command approval without JSON output")
 	rootCmd.PersistentFlags().BoolVar(&noAuditLog, "no-audit-log", false, "Disable audit logging")
-}
 
-// initApp initializes the application (logger, config, audit)
-func initApp() {
-	// Initialize logger
-	logger.Init(logger.Options{Verbose: verbose})
+	rootCmd.AddCommand(buildValidateCmd(&cfg, &cfgPath, &cfgErr))
+	rootCmd.AddCommand(buildInitCmd())
+	rootCmd.AddCommand(buildCompletionCmd(rootCmd))
 
-	// Initialize config (uses embedded defaults if no config file exists)
-	config.Init()
-
-	// Initialize audit logging (unless disabled)
-	audit.Init("", noAuditLog)
-}
-
-// IsVerbose returns whether verbose mode is enabled
-func IsVerbose() bool {
-	return verbose
-}
-
-// IsDryRun returns whether dry-run mode is enabled
-func IsDryRun() bool {
-	return dryRun
+	return rootCmd
 }
