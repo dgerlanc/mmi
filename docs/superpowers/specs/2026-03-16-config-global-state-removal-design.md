@@ -61,32 +61,40 @@ Note: `GetConfigDir()` returns `(string, error)` — the error case (from `os.Us
 - `LoadConfig(data []byte) (*Config, error)` — pure function, no global state
 - `LoadConfigWithDir(data []byte, configDir string) (*Config, error)` — pure function
 - `GetConfigDir() (string, error)` — reads env var, no mutation
+- `EnsureConfigFiles()` and `GetDefaultConfig()` — no global state dependency
 - `Config` struct — unchanged
 
 ### `internal/hook` Package
 
-**Change `ProcessWithResult` to accept `*config.Config`:**
+**Change `ProcessWithResult` to accept config path and error alongside `*config.Config`:**
 
-The current signature is `ProcessWithResult(r io.Reader) Result`. It reads JSON from stdin, parses it, extracts the command, then calls `config.Get()` to get patterns.
+The current signature is `ProcessWithResult(r io.Reader) Result`. It reads JSON from stdin, parses it, extracts the command, then calls `config.Get()` to get patterns and `config.GetConfigPath()` / `config.InitError()` for audit logging.
 
-The only change is adding `cfg *config.Config` as a parameter and removing the `config.Get()` call. The `io.Reader` parameter and all JSON parsing stay exactly as they are:
-
+New signature:
 ```go
-func ProcessWithResult(r io.Reader, cfg *config.Config) Result
+func ProcessWithResult(r io.Reader, cfg *config.Config, cfgPath string, cfgErr error) Result
 ```
 
-The caller provides config; `ProcessWithResult` no longer calls `config.Get()`.
+- `cfg` replaces the `config.Get()` call
+- `cfgPath` and `cfgErr` replace `config.GetConfigPath()` and `config.InitError()` calls inside `logAudit`
+- The `io.Reader` parameter and all JSON parsing stay exactly as they are
 
-**Change `logAudit` to accept config path and error:**
+**Change `Process` wrapper to match:**
+```go
+func Process(r io.Reader, cfg *config.Config, cfgPath string, cfgErr error) (approved bool, reason string) {
+    result := ProcessWithResult(r, cfg, cfgPath, cfgErr)
+    return result.Approved, result.Reason
+}
+```
 
-`logAudit` currently calls `config.GetConfigPath()` and `config.InitError()`. Since those functions are removed, the config path and any load error must be passed in:
+**Update `logAudit` to accept config path and error as parameters:**
 
 ```go
 func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64,
     sessionID, toolUseID, cwd, rawInput, rawOutput, configPath, configError string)
 ```
 
-The `configPath` and `configError` values originate from `config.Load()` and flow through `ProcessWithResult` → `logAudit`. `ProcessWithResult` will need to accept these (or derive `configError` from the cfg/err it receives). The simplest approach: add `ConfigPath` and `ConfigError` fields to a new `ProcessOptions` struct, or pass them alongside `cfg`. Implementation detail to resolve during planning.
+`ProcessWithResult` converts `cfgErr` to a string (or empty string if nil) before passing to `logAudit`.
 
 `StripWrappers` and `CheckSafe` already accept pattern slices as parameters — no changes.
 
@@ -117,14 +125,26 @@ func buildRootCmd() *cobra.Command {
             // cfgErr is stored, not returned — matches current behavior where
             // config parse errors are logged to audit but don't block execution
 
-            if !noAuditLog {
-                audit.Init("", noAuditLog)
-            }
+            // Always call audit.Init, matching current behavior.
+            // The noAuditLog flag disables logging inside Init.
+            audit.Init("", noAuditLog)
             return nil
         },
         // Default command: process stdin for command approval
         Run: func(cmd *cobra.Command, args []string) {
-            runHook(cfg, cfgPath, cfgErr, dryRun)
+            result := hook.ProcessWithResult(os.Stdin, cfg, cfgPath, cfgErr)
+
+            if dryRun {
+                if result.Approved {
+                    fmt.Fprintf(os.Stderr, "APPROVED: %s (reason: %s)\n", result.Command, result.Reason)
+                } else if result.Command != "" {
+                    fmt.Fprintf(os.Stderr, "REJECTED: %s\n", result.Command)
+                } else {
+                    fmt.Fprintf(os.Stderr, "REJECTED: (no command parsed)\n")
+                }
+                return
+            }
+            fmt.Print(result.Output)
         },
         SilenceUsage: true,
     }
@@ -141,11 +161,17 @@ func buildRootCmd() *cobra.Command {
 }
 ```
 
+The `runHook` function in `cmd/run.go` is removed. Its logic is inlined into the root command's `Run` closure, which has direct access to `cfg`, `cfgPath`, `cfgErr`, and `dryRun` from the enclosing scope.
+
 **`completion.go`:** The current code references the package-level `rootCmd` in its `RunE` (for `GenBashCompletion` etc.) and uses `init()` to add itself. This becomes `buildCompletionCmd(rootCmd *cobra.Command)` which receives the root command as a parameter and returns the completion command.
 
 **`validate.go`:** `buildValidateCmd` receives pointers to `cfg`, `cfgPath`, and `cfgErr` so it can display config status and any parse errors (replacing `config.Get()` and `config.InitError()`).
 
 **`init.go`:** `buildInitCmd()` manages its own local flags (`force`, `configOnly`, `claudeSettings`). Does not need config since it creates it.
+
+**Remove `IsVerbose()` and `IsDryRun()`** — these exported functions access the package-level globals being removed. They are only used in `cmd` package tests (`root_test.go`), not by any external package. The tests that exercise them are deleted.
+
+**Remove `Execute()`** — no longer needed as an exported function.
 
 **`main.go`** becomes:
 ```go
@@ -156,7 +182,7 @@ func main() {
 }
 ```
 
-The `Execute()` exported function is removed — `main.go` calls `buildRootCmd().Execute()` directly.
+**Note on `mmi init`:** `PersistentPreRunE` calls `config.Load()` unconditionally, including for `mmi init`. On first run (before a config file exists), `Load()` returns embedded defaults with an empty path — this matches current behavior where `config.Init()` runs unconditionally and falls back to defaults.
 
 ### Test Changes
 
@@ -172,23 +198,29 @@ cfg := &config.Config{
     SafeCommands:    []patterns.Pattern{...},
     WrapperPatterns: []patterns.Pattern{...},
 }
-result := hook.ProcessWithResult(strings.NewReader(jsonInput), cfg)
+result := hook.ProcessWithResult(strings.NewReader(jsonInput), cfg, "", nil)
 ```
 
 **`main_test.go`:**
 - Remove `TestMain` that sets up global config via env vars and `config.Init()`
 - Each test calls `config.LoadConfig([]byte(...))` to get a `*Config` value
 - End-to-end CLI tests call `buildRootCmd()` and execute with test args
+- Tests like `TestStripWrappers` and `TestCheckSafe` pass config patterns directly (already do this)
 
-**`benchmark_test.go` and `fuzz_test.go`:**
-- Both currently rely on `TestMain` for global config setup and call `hook.ProcessWithResult(io.Reader)`
-- Update to construct `*Config` inline (or from a test helper) and pass to `ProcessWithResult`
-- `benchmark_test.go` constructs config once in the benchmark setup, reuses across iterations
+**`benchmark_test.go`:**
+- Construct `*Config` once in benchmark setup (outside `b.ResetTimer()` / the hot loop)
+- Pass to `ProcessWithResult` on each iteration
+
+**`fuzz_test.go`:**
+- Construct `*Config` once outside the `f.Fuzz` callback
+- Capture in the closure passed to `f.Fuzz`
+- Pass to `ProcessWithResult` on each fuzz iteration
 
 **`cmd/*_test.go`:**
 - Delete `resetGlobalState()` and `setupTestConfig()`
+- Delete `TestIsVerbose` and `TestIsDryRun` (test functions for removed exports)
+- Tests that reference package-level `rootCmd`, `validateCmd`, etc. are rewritten to use `buildRootCmd()` — each test gets its own command tree with its own config, fully isolated
 - Tests call `buildRootCmd()`, set args, and execute
-- Each test gets its own command tree with its own config — fully isolated
 
 **`internal/testutil`:**
 - `SetupTestConfig` simplified to return `*Config` directly without env var manipulation, or deleted if inline config construction suffices
@@ -207,4 +239,5 @@ Single-shot removal — no backward compatibility shims or deprecated functions.
 - `Config` struct fields and TOML parsing logic
 - Pattern compilation and matching
 - `GetConfigDir()` behavior
+- `EnsureConfigFiles()` and `GetDefaultConfig()` behavior
 - `ProcessWithResult` still reads JSON from `io.Reader` — only config injection changes
