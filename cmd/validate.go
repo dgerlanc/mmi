@@ -22,27 +22,29 @@ This is useful for:
 				return fmt.Errorf("configuration error: %w", *cfgErr)
 			}
 
-			fmt.Println("Configuration valid!")
-			fmt.Println()
+			w := cmd.OutOrStdout()
 
-			fmt.Printf("Subshell allow all: %v\n", (*cfg).SubshellAllowAll)
-			fmt.Println()
+			fmt.Fprintln(w, "Configuration valid!")
+			fmt.Fprintln(w)
 
-			fmt.Printf("Deny patterns: %d\n", len((*cfg).DenyPatterns))
+			fmt.Fprintf(w, "Subshell allow all: %v\n", (*cfg).SubshellAllowAll)
+			fmt.Fprintln(w)
+
+			fmt.Fprintf(w, "Deny patterns: %d\n", len((*cfg).DenyPatterns))
 			for _, p := range (*cfg).DenyPatterns {
-				fmt.Printf("  - %s: %s\n", p.Name, p.Regex.String())
+				fmt.Fprintf(w, "  - %s: %s\n", p.Name, p.Regex.String())
 			}
-			fmt.Println()
+			fmt.Fprintln(w)
 
-			fmt.Printf("Wrapper patterns: %d\n", len((*cfg).WrapperPatterns))
+			fmt.Fprintf(w, "Wrapper patterns: %d\n", len((*cfg).WrapperPatterns))
 			for _, p := range (*cfg).WrapperPatterns {
-				fmt.Printf("  - %s: %s\n", p.Name, p.Regex.String())
+				fmt.Fprintf(w, "  - %s: %s\n", p.Name, p.Regex.String())
 			}
-			fmt.Println()
+			fmt.Fprintln(w)
 
-			fmt.Printf("Safe command patterns: %d\n", len((*cfg).SafeCommands))
+			fmt.Fprintf(w, "Safe command patterns: %d\n", len((*cfg).SafeCommands))
 			for _, p := range (*cfg).SafeCommands {
-				fmt.Printf("  - %s: %s\n", p.Name, p.Regex.String())
+				fmt.Fprintf(w, "  - %s: %s\n", p.Name, p.Regex.String())
 			}
 
 			return nil

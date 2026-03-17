@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/dgerlanc/mmi/internal/audit"
 	"github.com/dgerlanc/mmi/internal/config"
@@ -50,20 +49,20 @@ Usage in ~/.claude/settings.json:
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			result := hook.ProcessWithResult(os.Stdin, cfg, cfgPath, cfgErr)
+			result := hook.ProcessWithResult(cmd.InOrStdin(), cfg, cfgPath, cfgErr)
 
 			if dryRun {
 				if result.Approved {
-					fmt.Fprintf(os.Stderr, "APPROVED: %s (reason: %s)\n", result.Command, result.Reason)
+					fmt.Fprintf(cmd.ErrOrStderr(), "APPROVED: %s (reason: %s)\n", result.Command, result.Reason)
 				} else if result.Command != "" {
-					fmt.Fprintf(os.Stderr, "REJECTED: %s\n", result.Command)
+					fmt.Fprintf(cmd.ErrOrStderr(), "REJECTED: %s\n", result.Command)
 				} else {
-					fmt.Fprintf(os.Stderr, "REJECTED: (no command parsed)\n")
+					fmt.Fprintf(cmd.ErrOrStderr(), "REJECTED: (no command parsed)\n")
 				}
 				return
 			}
 
-			fmt.Print(result.Output)
+			fmt.Fprint(cmd.OutOrStdout(), result.Output)
 		},
 		SilenceUsage: true,
 	}

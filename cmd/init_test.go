@@ -13,29 +13,18 @@ import (
 )
 
 func TestRunInitCreatesConfigFile(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory for config
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
+	t.Setenv("MMI_CONFIG", configDir)
 
-	// Set environment to use temp directory
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	// Create a command for testing
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--config-only", "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Reset force flag
-	initForce = false
-
-	// Run init
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify config file was created
@@ -57,12 +46,8 @@ func TestRunInitCreatesConfigFile(t *testing.T) {
 }
 
 func TestRunInitWithExistingConfigPrintsNotice(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with existing config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	// Create existing config file
 	configPath := filepath.Join(tmpDir, "config.toml")
@@ -74,21 +59,14 @@ func TestRunInitWithExistingConfigPrintsNotice(t *testing.T) {
 	// Set up Claude settings path
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-	initClaudeSettings = settingsPath
 
-	// Create a command for testing
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Reset flags
-	initForce = false
-	initConfigOnly = false
-
-	// Run init - should succeed (prints notice but no error)
-	err := runInit(cmd, []string{})
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("expected no error when config exists, got: %v", err)
 	}
 
@@ -123,12 +101,8 @@ func TestRunInitWithExistingConfigPrintsNotice(t *testing.T) {
 }
 
 func TestRunInitWithExistingConfigConfiguresClaudeSettings(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with existing config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	// Create existing config file with custom content
 	configPath := filepath.Join(tmpDir, "config.toml")
@@ -140,9 +114,6 @@ func TestRunInitWithExistingConfigConfiguresClaudeSettings(t *testing.T) {
 	// Set up Claude settings path with empty settings file
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-	initClaudeSettings = settingsPath
-
-	// Create empty settings.json
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -150,19 +121,14 @@ func TestRunInitWithExistingConfigConfiguresClaudeSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Reset flags - no force, no config-only
-	initForce = false
-	initConfigOnly = false
-
-	// Run init without --force
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify config.toml was NOT modified
@@ -191,12 +157,8 @@ func TestRunInitWithExistingConfigConfiguresClaudeSettings(t *testing.T) {
 }
 
 func TestRunInitWithExistingConfigAndConfigOnlySkipsClaudeSettings(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with existing config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	// Create existing config file
 	configPath := filepath.Join(tmpDir, "config.toml")
@@ -205,25 +167,17 @@ func TestRunInitWithExistingConfigAndConfigOnlySkipsClaudeSettings(t *testing.T)
 		t.Fatal(err)
 	}
 
-	// Set up Claude settings path
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-	initClaudeSettings = settingsPath
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--config-only", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Set config-only flag
-	initForce = false
-	initConfigOnly = true
-	defer func() { initConfigOnly = false }()
-
-	// Run init with --config-only
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify config.toml was NOT modified
@@ -242,12 +196,8 @@ func TestRunInitWithExistingConfigAndConfigOnlySkipsClaudeSettings(t *testing.T)
 }
 
 func TestRunInitWithForceOverwrites(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with existing config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	// Create existing config file with different content
 	configPath := filepath.Join(tmpDir, "config.toml")
@@ -256,20 +206,14 @@ func TestRunInitWithForceOverwrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a command for testing
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--force", "--config-only", "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Set force flag
-	initForce = true
-	defer func() { initForce = false }()
-
-	// Run init - should succeed with force
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() with --force error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() with --force error = %v", err)
 	}
 
 	// Verify content was replaced with default config
@@ -285,29 +229,18 @@ func TestRunInitWithForceOverwrites(t *testing.T) {
 }
 
 func TestRunInitCreatesDirectory(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory
 	tmpDir := t.TempDir()
-	// Use a nested path that doesn't exist
 	configDir := filepath.Join(tmpDir, "nested", "path", "mmi")
+	t.Setenv("MMI_CONFIG", configDir)
 
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	// Create a command for testing
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--config-only", "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	// Reset force flag
-	initForce = false
-
-	// Run init
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify directory was created
@@ -323,81 +256,113 @@ func TestRunInitCreatesDirectory(t *testing.T) {
 }
 
 func TestInitCmdHasForceFlag(t *testing.T) {
+	rootCmd := buildRootCmd()
+	var initCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "init" {
+			initCmd = cmd
+			break
+		}
+	}
+	if initCmd == nil {
+		t.Fatal("init subcommand not found")
+	}
+
 	flag := initCmd.Flags().Lookup("force")
 	if flag == nil {
 		t.Fatal("init command should have --force flag")
 	}
-
 	if flag.Shorthand != "f" {
 		t.Errorf("--force flag shorthand = %q, want 'f'", flag.Shorthand)
 	}
-
 	if flag.DefValue != "false" {
 		t.Errorf("--force flag default = %q, want 'false'", flag.DefValue)
 	}
 }
 
 func TestInitCmdUsage(t *testing.T) {
+	rootCmd := buildRootCmd()
+	var initCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "init" {
+			initCmd = cmd
+			break
+		}
+	}
+	if initCmd == nil {
+		t.Fatal("init subcommand not found")
+	}
+
 	if initCmd.Use != "init" {
 		t.Errorf("initCmd.Use = %q, want 'init'", initCmd.Use)
 	}
-
 	if initCmd.Short == "" {
 		t.Error("initCmd.Short should not be empty")
 	}
-
 	if initCmd.Long == "" {
 		t.Error("initCmd.Long should not be empty")
 	}
 }
 
-// Tests for Claude settings functionality
-
 func TestInitCmdHasConfigOnlyFlag(t *testing.T) {
+	rootCmd := buildRootCmd()
+	var initCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "init" {
+			initCmd = cmd
+			break
+		}
+	}
+	if initCmd == nil {
+		t.Fatal("init subcommand not found")
+	}
+
 	flag := initCmd.Flags().Lookup("config-only")
 	if flag == nil {
 		t.Fatal("init command should have --config-only flag")
 	}
-
 	if flag.DefValue != "false" {
 		t.Errorf("--config-only flag default = %q, want 'false'", flag.DefValue)
 	}
 }
 
 func TestInitCmdHasClaudeSettingsFlag(t *testing.T) {
+	rootCmd := buildRootCmd()
+	var initCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "init" {
+			initCmd = cmd
+			break
+		}
+	}
+	if initCmd == nil {
+		t.Fatal("init subcommand not found")
+	}
+
 	flag := initCmd.Flags().Lookup("claude-settings")
 	if flag == nil {
 		t.Fatal("init command should have --claude-settings flag")
 	}
-
 	if flag.DefValue != "" {
 		t.Errorf("--claude-settings flag default = %q, want empty string", flag.DefValue)
 	}
 }
 
 func TestRunInitWithConfigOnlySkipsSettings(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	t.Setenv("MMI_CONFIG", configDir)
 
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = filepath.Join(claudeDir, "settings.json")
-
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--config-only", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = true
-	defer func() { initConfigOnly = false }()
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify config.toml was created
@@ -407,35 +372,26 @@ func TestRunInitWithConfigOnlySkipsSettings(t *testing.T) {
 	}
 
 	// Verify settings.json was NOT created
-	settingsPath := filepath.Join(claudeDir, "settings.json")
 	if _, err := os.Stat(settingsPath); !os.IsNotExist(err) {
 		t.Error("settings.json should not be created with --config-only")
 	}
 }
 
 func TestRunInitConfiguresClaudeSettings(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
+	t.Setenv("MMI_CONFIG", configDir)
 
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
-
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify config.toml was created
@@ -466,16 +422,11 @@ func TestRunInitConfiguresClaudeSettings(t *testing.T) {
 }
 
 func TestRunInitPreservesExistingSettings(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
+	t.Setenv("MMI_CONFIG", configDir)
 
 	// Create existing settings with other keys
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -492,21 +443,18 @@ func TestRunInitPreservesExistingSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Read back settings
-	data, err = os.ReadFile(settingsPath)
+	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("failed to read settings.json: %v", err)
 	}
@@ -533,16 +481,11 @@ func TestRunInitPreservesExistingSettings(t *testing.T) {
 }
 
 func TestRunInitPreservesOtherHooks(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
+	t.Setenv("MMI_CONFIG", configDir)
 
 	// Create existing settings with other PreToolUse hooks
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -568,21 +511,18 @@ func TestRunInitPreservesOtherHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Read back settings
-	data, err = os.ReadFile(settingsPath)
+	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("failed to read settings.json: %v", err)
 	}
@@ -601,12 +541,10 @@ func TestRunInitPreservesOtherHooks(t *testing.T) {
 	hooks := settings["hooks"].(map[string]any)
 	preToolUse := hooks["PreToolUse"].([]any)
 
-	// Should have 2 matchers now
 	if len(preToolUse) != 2 {
 		t.Errorf("expected 2 PreToolUse matchers, got %d", len(preToolUse))
 	}
 
-	// Find the Edit matcher
 	foundEdit := false
 	for _, matcher := range preToolUse {
 		m := matcher.(map[string]any)
@@ -621,16 +559,11 @@ func TestRunInitPreservesOtherHooks(t *testing.T) {
 }
 
 func TestRunInitSkipsWhenHookPresent(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
+	t.Setenv("MMI_CONFIG", configDir)
 
 	// Create existing settings with mmi hook already present
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -660,16 +593,13 @@ func TestRunInitSkipsWhenHookPresent(t *testing.T) {
 	originalInfo, _ := os.Stat(settingsPath)
 	originalModTime := originalInfo.ModTime()
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
+	rootCmd.SetOut(&stdout)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify file was not modified (by checking content is identical)
@@ -678,12 +608,10 @@ func TestRunInitSkipsWhenHookPresent(t *testing.T) {
 		t.Fatalf("failed to read settings.json: %v", err)
 	}
 
-	// Check content is unchanged
 	if !bytes.Equal(originalData, newData) {
 		t.Error("settings.json was modified when hook was already present")
 	}
 
-	// Also check mod time wasn't updated (file wasn't rewritten)
 	newInfo, _ := os.Stat(settingsPath)
 	if !newInfo.ModTime().Equal(originalModTime) {
 		t.Error("settings.json mod time changed when hook was already present")
@@ -691,28 +619,20 @@ func TestRunInitSkipsWhenHookPresent(t *testing.T) {
 }
 
 func TestRunInitCreatesClaudeDir(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, "nested", "path", ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
+	t.Setenv("MMI_CONFIG", configDir)
 
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
-
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
-	if err != nil {
-		t.Fatalf("runInit() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
 	// Verify claude directory was created
@@ -727,16 +647,11 @@ func TestRunInitCreatesClaudeDir(t *testing.T) {
 }
 
 func TestRunInitHandlesInvalidJSON(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, "mmi")
 	claudeDir := filepath.Join(tmpDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
-
-	os.Setenv("MMI_CONFIG", configDir)
-	defer os.Unsetenv("MMI_CONFIG")
-	initClaudeSettings = settingsPath
+	t.Setenv("MMI_CONFIG", configDir)
 
 	// Create existing settings with invalid JSON
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -746,15 +661,14 @@ func TestRunInitHandlesInvalidJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &cobra.Command{}
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"init", "--claude-settings", settingsPath, "--no-audit-log"})
+	rootCmd.SilenceErrors = true
 	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 
-	initForce = false
-	initConfigOnly = false
-
-	err := runInit(cmd, []string{})
+	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
@@ -964,12 +878,10 @@ func TestAddMMIHook(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := addMMIHook(tt.settings)
 
-			// Verify the hook was added
 			if !isMMIHookPresent(result) {
 				t.Error("mmi hook should be present after addMMIHook")
 			}
 
-			// Verify existing settings are preserved
 			if tt.settings != nil {
 				if v, ok := tt.settings["otherKey"]; ok {
 					if result["otherKey"] != v {
@@ -978,7 +890,6 @@ func TestAddMMIHook(t *testing.T) {
 				}
 			}
 
-			// Verify existing hooks are preserved
 			if tt.settings != nil {
 				if hooks, ok := tt.settings["hooks"].(map[string]any); ok {
 					if postToolUse, ok := hooks["PostToolUse"]; ok {
@@ -986,7 +897,7 @@ func TestAddMMIHook(t *testing.T) {
 						if resultHooks["PostToolUse"] == nil {
 							t.Error("existing PostToolUse hooks should be preserved")
 						}
-						_ = postToolUse // use the variable
+						_ = postToolUse
 					}
 				}
 			}
@@ -1020,7 +931,6 @@ func TestAddMMIHookPreservesExistingMatchers(t *testing.T) {
 		t.Errorf("expected 2 PreToolUse matchers, got %d", len(preToolUse))
 	}
 
-	// Verify Edit matcher is still there
 	foundEdit := false
 	for _, matcher := range preToolUse {
 		m := matcher.(map[string]any)
