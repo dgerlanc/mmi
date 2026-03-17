@@ -94,24 +94,13 @@ pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
 name = "var assignment"
 `
 
-// TestMain sets up config for all tests
-func TestMain(m *testing.M) {
-	tmpDir, err := os.MkdirTemp("", "mmi-test-*")
+func loadTestConfig(t *testing.T) *config.Config {
+	t.Helper()
+	cfg, err := config.LoadConfig([]byte(testConfig))
 	if err != nil {
-		os.Exit(1)
+		t.Fatalf("failed to load test config: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	// Write test-specific config
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
-		os.Exit(1)
-	}
-
-	config.Init()
-	os.Exit(m.Run())
+	return cfg
 }
 
 // =============================================================================
@@ -119,6 +108,8 @@ func TestMain(m *testing.M) {
 // =============================================================================
 
 func TestProcess(t *testing.T) {
+	cfg := loadTestConfig(t)
+
 	tests := []struct {
 		name           string
 		input          string
@@ -152,7 +143,7 @@ func TestProcess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			approved, reason := hook.Process(strings.NewReader(tt.input))
+			approved, reason := hook.Process(strings.NewReader(tt.input), cfg, "", nil)
 			if approved != tt.expectApproved {
 				t.Errorf("Process() approved = %v, want %v", approved, tt.expectApproved)
 			}
@@ -229,7 +220,7 @@ func TestSplitCommandChain(t *testing.T) {
 }
 
 func TestStripWrappers(t *testing.T) {
-	cfg := config.Get()
+	cfg := loadTestConfig(t)
 
 	tests := []struct {
 		name             string
@@ -267,7 +258,7 @@ func TestStripWrappers(t *testing.T) {
 // =============================================================================
 
 func TestCheckSafe(t *testing.T) {
-	cfg := config.Get()
+	cfg := loadTestConfig(t)
 
 	tests := []struct {
 		name     string
@@ -308,7 +299,7 @@ func TestCheckSafe(t *testing.T) {
 }
 
 func TestCheckSafeUnsafe(t *testing.T) {
-	cfg := config.Get()
+	cfg := loadTestConfig(t)
 
 	unsafeCommands := []string{
 		"rm -rf /",
@@ -338,6 +329,12 @@ func TestCheckSafeUnsafe(t *testing.T) {
 func runMmi(t *testing.T, input string) (string, int) {
 	t.Helper()
 
+	// Set up a temp config directory for the integration test binary
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
 	cmd := exec.Command("go", "build", "-o", "mmi_test_binary", ".")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to build: %v", err)
@@ -346,7 +343,7 @@ func runMmi(t *testing.T, input string) (string, int) {
 
 	cmd = exec.Command("./mmi_test_binary")
 	cmd.Stdin = strings.NewReader(input)
-	cmd.Env = os.Environ() // Inherit environment including MMI_CONFIG
+	cmd.Env = append(os.Environ(), "MMI_CONFIG="+tmpDir)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
@@ -439,10 +436,7 @@ func TestIntegration(t *testing.T) {
 
 func TestGetConfigDir(t *testing.T) {
 	t.Run("with MMI_CONFIG", func(t *testing.T) {
-		origVal := os.Getenv("MMI_CONFIG")
-		defer os.Setenv("MMI_CONFIG", origVal)
-
-		os.Setenv("MMI_CONFIG", "/custom/path")
+		t.Setenv("MMI_CONFIG", "/custom/path")
 		dir, err := config.GetConfigDir()
 		if err != nil {
 			t.Errorf("GetConfigDir() error = %v", err)
@@ -453,9 +447,7 @@ func TestGetConfigDir(t *testing.T) {
 	})
 
 	t.Run("without MMI_CONFIG", func(t *testing.T) {
-		origVal := os.Getenv("MMI_CONFIG")
-		defer os.Setenv("MMI_CONFIG", origVal)
-
+		t.Setenv("MMI_CONFIG", "")
 		os.Unsetenv("MMI_CONFIG")
 		dir, err := config.GetConfigDir()
 		if err != nil {
@@ -580,49 +572,27 @@ name = "bad"
 }
 
 func TestInitConfig(t *testing.T) {
-	// Reset config state
-	config.Reset()
+	tmpDir := t.TempDir()
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	tmpDir, err := os.MkdirTemp("", "mmi-init-test-*")
+	cfg, _, err := config.Load()
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Fatalf("Load() should succeed with missing config: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	origEnv := os.Getenv("MMI_CONFIG")
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Setenv("MMI_CONFIG", origEnv)
-
-	// Init returns error when config doesn't exist
-	err = config.Init()
-	if err == nil {
-		t.Error("Init() should return error when config file doesn't exist")
-	}
-
-	// Config should be empty (ask all) when no config file exists
-	cfg := config.Get()
 	if len(cfg.WrapperPatterns) != 0 {
 		t.Error("WrapperPatterns should be empty when no config file exists")
 	}
 	if len(cfg.SafeCommands) != 0 {
 		t.Error("SafeCommands should be empty when no config file exists")
 	}
-
-	// Config file should NOT be auto-created
-	if _, err := os.Stat(filepath.Join(tmpDir, "config.toml")); err == nil {
+	if _, statErr := os.Stat(filepath.Join(tmpDir, "config.toml")); statErr == nil {
 		t.Error("config.toml should not be auto-created")
 	}
 }
 
 func TestConfigCustomization(t *testing.T) {
-	// Reset config state
-	config.Reset()
-
-	tmpDir, err := os.MkdirTemp("", "mmi-custom-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	configToml := []byte(`
 [[wrappers.regex]]
@@ -635,15 +605,10 @@ subcommands = ["arg"]
 `)
 	os.WriteFile(filepath.Join(tmpDir, "config.toml"), configToml, 0644)
 
-	origEnv := os.Getenv("MMI_CONFIG")
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Setenv("MMI_CONFIG", origEnv)
-
-	if err := config.Init(); err != nil {
-		t.Errorf("Init() error = %v", err)
+	cfg, _, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
 	}
-
-	cfg := config.Get()
 
 	// Verify custom patterns work
 	core, wrappers := hook.StripWrappers("custom mycommand arg", cfg.WrapperPatterns)
