@@ -108,6 +108,7 @@ func loadTestConfig(t *testing.T) *config.Config {
 // =============================================================================
 
 func TestProcess(t *testing.T) {
+	t.Parallel()
 	cfg := loadTestConfig(t)
 
 	tests := []struct {
@@ -155,6 +156,7 @@ func TestProcess(t *testing.T) {
 }
 
 func TestFormatApproval(t *testing.T) {
+	t.Parallel()
 	result := hook.FormatApproval("test reason")
 
 	var output hook.Output
@@ -172,6 +174,7 @@ func TestFormatApproval(t *testing.T) {
 }
 
 func TestSplitCommandChain(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -220,6 +223,7 @@ func TestSplitCommandChain(t *testing.T) {
 }
 
 func TestStripWrappers(t *testing.T) {
+	t.Parallel()
 	cfg := loadTestConfig(t)
 
 	tests := []struct {
@@ -258,6 +262,7 @@ func TestStripWrappers(t *testing.T) {
 // =============================================================================
 
 func TestCheckSafe(t *testing.T) {
+	t.Parallel()
 	cfg := loadTestConfig(t)
 
 	tests := []struct {
@@ -299,6 +304,7 @@ func TestCheckSafe(t *testing.T) {
 }
 
 func TestCheckSafeUnsafe(t *testing.T) {
+	t.Parallel()
 	cfg := loadTestConfig(t)
 
 	unsafeCommands := []string{
@@ -462,6 +468,7 @@ func TestGetConfigDir(t *testing.T) {
 }
 
 func TestEnsureConfigFiles(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "mmi-ensure-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -488,6 +495,7 @@ func TestEnsureConfigFiles(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("simple commands", func(t *testing.T) {
 		tomlData := []byte(`
 [[commands.simple]]
@@ -625,6 +633,7 @@ subcommands = ["arg"]
 // =============================================================================
 
 func TestBuildFlagPattern(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -646,12 +655,14 @@ func TestBuildFlagPattern(t *testing.T) {
 }
 
 func TestBuildSimplePattern(t *testing.T) {
+	t.Parallel()
 	if got := patterns.BuildSimplePattern("pytest"); got != `^pytest\b` {
 		t.Errorf("BuildSimplePattern(pytest) = %q, want ^pytest\\b", got)
 	}
 }
 
 func TestBuildSubcommandPattern(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		cmd         string

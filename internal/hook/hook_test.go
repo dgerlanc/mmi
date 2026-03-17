@@ -14,6 +14,7 @@ import (
 )
 
 func TestContainsDangerousPattern(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		cmd       string
@@ -149,6 +150,7 @@ EOF`,
 }
 
 func TestFindQuotedHeredocRanges(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		cmd        string
@@ -357,6 +359,7 @@ func TestProcessWithResultPassesAllFields(t *testing.T) {
 // Phase 3: Pattern Match Results Tests
 
 func TestCheckSafeResultMatchedTrue(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
@@ -378,6 +381,7 @@ func TestCheckSafeResultMatchedTrue(t *testing.T) {
 }
 
 func TestCheckSafeResultMatchedFalse(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
@@ -390,6 +394,7 @@ func TestCheckSafeResultMatchedFalse(t *testing.T) {
 }
 
 func TestCheckSafeResultSimpleType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "pwd", patternType: "simple", pattern: `^pwd\b`},
 	})
@@ -402,6 +407,7 @@ func TestCheckSafeResultSimpleType(t *testing.T) {
 }
 
 func TestCheckSafeResultSubcommandType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "git", patternType: "subcommand", pattern: `^git\s+(status|log)\b`},
 	})
@@ -414,6 +420,7 @@ func TestCheckSafeResultSubcommandType(t *testing.T) {
 }
 
 func TestCheckSafeResultRegexType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "custom", patternType: "regex", pattern: `^mycommand\s+.*`},
 	})
@@ -426,6 +433,7 @@ func TestCheckSafeResultRegexType(t *testing.T) {
 }
 
 func TestCheckSafeResultCommandType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "timeout", patternType: "command", pattern: `^timeout\s+\d+\s+`},
 	})
@@ -438,6 +446,7 @@ func TestCheckSafeResultCommandType(t *testing.T) {
 }
 
 func TestCheckDenyResultDeniedTrue(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})
@@ -456,6 +465,7 @@ func TestCheckDenyResultDeniedTrue(t *testing.T) {
 }
 
 func TestCheckDenyResultDeniedFalse(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})

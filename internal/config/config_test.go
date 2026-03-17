@@ -90,6 +90,7 @@ func TestLoadReturnsDefaultsOnEveryError(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "test"
@@ -105,6 +106,7 @@ commands = ["echo", "ls"]
 }
 
 func TestLoadConfigWithIncludes(t *testing.T) {
+	t.Parallel()
 	// Create temp directory
 	dir := t.TempDir()
 
@@ -143,6 +145,7 @@ commands = ["ls", "cat"]
 }
 
 func TestLoadConfigCircularInclude(t *testing.T) {
+	t.Parallel()
 	// Create temp directory
 	dir := t.TempDir()
 
@@ -165,6 +168,7 @@ func TestLoadConfigCircularInclude(t *testing.T) {
 }
 
 func TestLoadConfigDenyPatterns(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.simple]]
 name = "dangerous"
@@ -186,6 +190,7 @@ name = "rm root"
 // Validation tests
 
 func TestValidateSimpleCommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "empty"
@@ -203,6 +208,7 @@ name = "empty"
 }
 
 func TestValidateSimpleCommandsEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "empty"
@@ -215,6 +221,7 @@ commands = []
 }
 
 func TestValidateCommandMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[wrappers.command]]
 flags = ["-n <arg>"]
@@ -229,6 +236,7 @@ flags = ["-n <arg>"]
 }
 
 func TestValidateCommandEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[wrappers.command]]
 command = ""
@@ -241,6 +249,7 @@ flags = ["-n <arg>"]
 }
 
 func TestValidateSubcommandCommandMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 subcommands = ["diff", "log"]
@@ -255,6 +264,7 @@ subcommands = ["diff", "log"]
 }
 
 func TestValidateSubcommandSubcommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 command = "git"
@@ -269,6 +279,7 @@ command = "git"
 }
 
 func TestValidateSubcommandSubcommandsEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 command = "git"
@@ -281,6 +292,7 @@ subcommands = []
 }
 
 func TestValidateRegexPatternMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.regex]]
 name = "empty pattern"
@@ -295,6 +307,7 @@ name = "empty pattern"
 }
 
 func TestValidateRegexPatternEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.regex]]
 pattern = ""
@@ -307,6 +320,7 @@ name = "empty pattern"
 }
 
 func TestValidateDenySimpleCommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.simple]]
 name = "dangerous"
@@ -321,6 +335,7 @@ name = "dangerous"
 }
 
 func TestValidateDenyRegexPatternMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.regex]]
 name = "dangerous"
@@ -335,6 +350,7 @@ name = "dangerous"
 }
 
 func TestValidationErrorIncludesName(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "my custom name"
@@ -350,6 +366,7 @@ commands = []
 }
 
 func TestValidationErrorCorrectIndex(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "valid"
@@ -373,6 +390,7 @@ commands = []
 }
 
 func TestLoadConfigSubshellDefaultsFalse(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "test"
@@ -388,6 +406,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllTrue(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = true
@@ -406,6 +425,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllFalse(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = false
@@ -424,6 +444,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllIncludeOverride(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	mainConfig := []byte(`
@@ -458,6 +479,7 @@ allow_all = true
 }
 
 func TestLoadConfigSubshellAllowAllFromInclude(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	mainConfig := []byte(`
@@ -489,6 +511,7 @@ allow_all = true
 }
 
 func TestLoadConfigSubshellAllowAllInvalidType(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = "yes"
