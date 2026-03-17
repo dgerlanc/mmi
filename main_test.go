@@ -335,16 +335,10 @@ func TestCheckSafeUnsafe(t *testing.T) {
 // Integration Tests
 // =============================================================================
 
-func runMmi(t *testing.T, input string) (string, int) {
+func runMmi(t *testing.T, binary string, input string) (string, int) {
 	t.Helper()
 
-	cmd := exec.Command("go", "build", "-o", "mmi_test_binary", ".")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to build: %v", err)
-	}
-	defer os.Remove("mmi_test_binary")
-
-	cmd = exec.Command("./mmi_test_binary")
+	cmd := exec.Command(binary)
 	cmd.Stdin = strings.NewReader(input)
 	cmd.Env = os.Environ() // Inherit environment including MMI_CONFIG
 	var stdout bytes.Buffer
@@ -362,9 +356,16 @@ func runMmi(t *testing.T, input string) (string, int) {
 }
 
 func TestIntegration(t *testing.T) {
+	// Build once for all integration subtests
+	binary := filepath.Join(t.TempDir(), "mmi_test_binary")
+	cmd := exec.Command("go", "build", "-o", binary, ".")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to build: %v", err)
+	}
+
 	t.Run("safe command produces output", func(t *testing.T) {
 		input := `{"tool_name":"Bash","tool_input":{"command":"git status"}}`
-		output, exitCode := runMmi(t, input)
+		output, exitCode := runMmi(t, binary, input)
 
 		if exitCode != 0 {
 			t.Errorf("Expected exit 0, got %d", exitCode)
@@ -384,7 +385,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("unsafe command produces ask output", func(t *testing.T) {
 		input := `{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}`
-		output, _ := runMmi(t, input)
+		output, _ := runMmi(t, binary, input)
 
 		if output == "" {
 			t.Errorf("Expected ask output, got nothing")
@@ -400,7 +401,7 @@ func TestIntegration(t *testing.T) {
 
 	t.Run("non-Bash tool produces ask output", func(t *testing.T) {
 		input := `{"tool_name":"Read","tool_input":{"file":"/etc/passwd"}}`
-		output, _ := runMmi(t, input)
+		output, _ := runMmi(t, binary, input)
 
 		if output == "" {
 			t.Errorf("Expected ask output, got nothing")
@@ -415,7 +416,7 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("invalid JSON produces ask output", func(t *testing.T) {
-		output, exitCode := runMmi(t, "invalid json")
+		output, exitCode := runMmi(t, binary, "invalid json")
 
 		if output == "" {
 			t.Errorf("Expected ask output, got nothing")
