@@ -7,12 +7,9 @@ import (
 	"testing"
 )
 
-func TestInitErrorNilOnValidConfig(t *testing.T) {
-	// Create temp directory with valid config
+func TestLoadValidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
+	t.Setenv("MMI_CONFIG", tmpDir)
 	validConfig := `
 [[commands.simple]]
 name = "test"
@@ -21,23 +18,24 @@ commands = ["echo"]
 	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	Reset()
-	if err := Init(); err != nil {
-		t.Fatalf("Init() returned error: %v", err)
+	cfg, cfgPath, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
 	}
-
-	if InitError() != nil {
-		t.Errorf("InitError() = %v, want nil", InitError())
+	if cfg == nil {
+		t.Fatal("Load() returned nil config")
+	}
+	if cfgPath == "" {
+		t.Error("Load() returned empty config path for existing file")
+	}
+	if len(cfg.SafeCommands) != 1 {
+		t.Errorf("expected 1 safe command, got %d", len(cfg.SafeCommands))
 	}
 }
 
-func TestInitErrorOnInvalidTOML(t *testing.T) {
-	// Create temp directory with invalid TOML
+func TestLoadInvalidTOML(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
+	t.Setenv("MMI_CONFIG", tmpDir)
 	invalidConfig := `
 [[commands.simple]]
 name = "test"
@@ -46,70 +44,53 @@ commands = ["foo""]
 	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	Reset()
-	err := Init()
+	cfg, cfgPath, err := Load()
 	if err == nil {
-		t.Fatal("Init() should have returned an error for invalid TOML")
+		t.Fatal("Load() should have returned an error for invalid TOML")
 	}
-
-	initErr := InitError()
-	if initErr == nil {
-		t.Fatal("InitError() should return non-nil error after failed Init()")
+	if cfg == nil {
+		t.Fatal("Load() should return non-nil defaults even on error")
 	}
-
-	if !strings.Contains(initErr.Error(), "failed to load config") {
-		t.Errorf("InitError() = %v, want error containing 'failed to load config'", initErr)
+	if cfgPath == "" {
+		t.Error("Load() should return config path even on parse error")
 	}
 }
 
-func TestInitErrorOnMissingConfigFile(t *testing.T) {
-	// Point to a directory with no config.toml
+func TestLoadMissingConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	Reset()
-	err := Init()
-	if err == nil {
-		t.Fatal("Init() should have returned an error for missing config file")
+	t.Setenv("MMI_CONFIG", tmpDir)
+	cfg, cfgPath, err := Load()
+	if err != nil {
+		t.Fatalf("Load() should not error for missing file, got: %v", err)
 	}
-
-	initErr := InitError()
-	if initErr == nil {
-		t.Fatal("InitError() should return non-nil error after failed Init()")
+	if cfg == nil {
+		t.Fatal("Load() should return non-nil defaults")
 	}
-
-	if !strings.Contains(initErr.Error(), "failed to read config.toml") {
-		t.Errorf("InitError() = %v, want error containing 'failed to read config.toml'", initErr)
+	if cfgPath != "" {
+		t.Errorf("Load() should return empty path for missing file, got: %q", cfgPath)
 	}
 }
 
-func TestResetClearsInitError(t *testing.T) {
-	// Create a broken config to produce an error
+func TestLoadReturnsDefaultsOnEveryError(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
+	t.Setenv("MMI_CONFIG", tmpDir)
 	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(`bad toml {{`), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	Reset()
-	Init()
-
-	if InitError() == nil {
-		t.Fatal("expected non-nil InitError before Reset")
+	cfg, _, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
 	}
-
-	Reset()
-
-	if InitError() != nil {
-		t.Errorf("InitError() = %v after Reset(), want nil", InitError())
+	if cfg == nil {
+		t.Fatal("Load() must always return non-nil config")
+	}
+	if len(cfg.SafeCommands) != 0 {
+		t.Errorf("expected 0 safe commands in defaults, got %d", len(cfg.SafeCommands))
 	}
 }
 
 func TestLoadConfig(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "test"
@@ -125,6 +106,7 @@ commands = ["echo", "ls"]
 }
 
 func TestLoadConfigWithIncludes(t *testing.T) {
+	t.Parallel()
 	// Create temp directory
 	dir := t.TempDir()
 
@@ -163,6 +145,7 @@ commands = ["ls", "cat"]
 }
 
 func TestLoadConfigCircularInclude(t *testing.T) {
+	t.Parallel()
 	// Create temp directory
 	dir := t.TempDir()
 
@@ -185,6 +168,7 @@ func TestLoadConfigCircularInclude(t *testing.T) {
 }
 
 func TestLoadConfigDenyPatterns(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.simple]]
 name = "dangerous"
@@ -206,6 +190,7 @@ name = "rm root"
 // Validation tests
 
 func TestValidateSimpleCommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "empty"
@@ -223,6 +208,7 @@ name = "empty"
 }
 
 func TestValidateSimpleCommandsEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "empty"
@@ -235,6 +221,7 @@ commands = []
 }
 
 func TestValidateCommandMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[wrappers.command]]
 flags = ["-n <arg>"]
@@ -249,6 +236,7 @@ flags = ["-n <arg>"]
 }
 
 func TestValidateCommandEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[wrappers.command]]
 command = ""
@@ -261,6 +249,7 @@ flags = ["-n <arg>"]
 }
 
 func TestValidateSubcommandCommandMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 subcommands = ["diff", "log"]
@@ -275,6 +264,7 @@ subcommands = ["diff", "log"]
 }
 
 func TestValidateSubcommandSubcommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 command = "git"
@@ -289,6 +279,7 @@ command = "git"
 }
 
 func TestValidateSubcommandSubcommandsEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.subcommand]]
 command = "git"
@@ -301,6 +292,7 @@ subcommands = []
 }
 
 func TestValidateRegexPatternMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.regex]]
 name = "empty pattern"
@@ -315,6 +307,7 @@ name = "empty pattern"
 }
 
 func TestValidateRegexPatternEmpty(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.regex]]
 pattern = ""
@@ -327,6 +320,7 @@ name = "empty pattern"
 }
 
 func TestValidateDenySimpleCommandsMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.simple]]
 name = "dangerous"
@@ -341,6 +335,7 @@ name = "dangerous"
 }
 
 func TestValidateDenyRegexPatternMissing(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[deny.regex]]
 name = "dangerous"
@@ -355,6 +350,7 @@ name = "dangerous"
 }
 
 func TestValidationErrorIncludesName(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "my custom name"
@@ -370,6 +366,7 @@ commands = []
 }
 
 func TestValidationErrorCorrectIndex(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "valid"
@@ -393,6 +390,7 @@ commands = []
 }
 
 func TestLoadConfigSubshellDefaultsFalse(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [[commands.simple]]
 name = "test"
@@ -408,6 +406,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllTrue(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = true
@@ -426,6 +425,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllFalse(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = false
@@ -444,6 +444,7 @@ commands = ["echo"]
 }
 
 func TestLoadConfigSubshellAllowAllIncludeOverride(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	mainConfig := []byte(`
@@ -478,6 +479,7 @@ allow_all = true
 }
 
 func TestLoadConfigSubshellAllowAllFromInclude(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	mainConfig := []byte(`
@@ -509,6 +511,7 @@ allow_all = true
 }
 
 func TestLoadConfigSubshellAllowAllInvalidType(t *testing.T) {
+	t.Parallel()
 	data := []byte(`
 [subshell]
 allow_all = "yes"
@@ -523,55 +526,5 @@ commands = ["echo"]
 	}
 	if cfg.SubshellAllowAll {
 		t.Error("SubshellAllowAll should be false when allow_all has invalid type")
-	}
-}
-
-func TestGetConfigPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	validConfig := `
-[[commands.simple]]
-name = "test"
-commands = ["echo"]
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	Reset()
-	defer Reset()
-	if err := Init(); err != nil {
-		t.Fatalf("Init() returned error: %v", err)
-	}
-
-	got := GetConfigPath()
-	want := filepath.Join(tmpDir, "config.toml")
-	if got != want {
-		t.Errorf("GetConfigPath() = %q, want %q", got, want)
-	}
-}
-
-func TestGetConfigPathAfterReset(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
-
-	validConfig := `
-[[commands.simple]]
-name = "test"
-commands = ["echo"]
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(validConfig), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	Reset()
-	Init()
-	Reset()
-
-	if got := GetConfigPath(); got != "" {
-		t.Errorf("GetConfigPath() after Reset() = %q, want empty string", got)
 	}
 }

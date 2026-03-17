@@ -7,19 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/spf13/cobra"
 )
 
 func TestRunValidateWithValidConfig(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with valid config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	// Write a valid config file
 	validConfig := `
 [[deny.simple]]
 name = "dangerous"
@@ -37,34 +31,17 @@ commands = ["ls", "cat"]
 		t.Fatal(err)
 	}
 
-	// Initialize config
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	// Capture stdout by redirecting it
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Create a command for testing
-	cmd := &cobra.Command{}
-
-	// Run validate
-	err := runValidate(cmd, []string{})
-
-	// Restore stdout
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Check output contains expected sections
+	output := stdout.String()
+
 	expectedStrings := []string{
 		"Configuration valid!",
 		"Deny patterns:",
@@ -80,14 +57,9 @@ commands = ["ls", "cat"]
 }
 
 func TestRunValidateShowsPatternCounts(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	// Write config with known number of patterns
 	testConfig := `
 [[deny.simple]]
 name = "deny1"
@@ -113,30 +85,17 @@ commands = ["cat", "head"]
 		t.Fatal(err)
 	}
 
-	// Initialize config
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Check pattern counts are displayed
+	output := stdout.String()
+
 	if !strings.Contains(output, "Deny patterns: 2") {
 		t.Errorf("expected 'Deny patterns: 2' in output, got:\n%s", output)
 	}
@@ -149,17 +108,9 @@ commands = ["cat", "head"]
 }
 
 func TestRunValidateShowsPatternNames(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	// Write config with named patterns
-	// Note: For simple entries (commands/wrappers), the pattern name is derived
-	// from the command itself, not the "name" field. The "name" field is just
-	// for human-readable identification in configuration.
 	testConfig := `
 [[deny.simple]]
 name = "my-deny-pattern"
@@ -177,34 +128,20 @@ commands = ["ls"]
 		t.Fatal(err)
 	}
 
-	// Initialize config
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Check pattern names are displayed - for simple entries, name is derived from command
+	output := stdout.String()
+
 	if !strings.Contains(output, "my-deny-pattern") {
 		t.Errorf("expected 'my-deny-pattern' in output, got:\n%s", output)
 	}
-	// Wrapper simple entries use the command name as pattern name
 	if !strings.Contains(output, "env") {
 		t.Errorf("expected 'env' in output, got:\n%s", output)
 	}
@@ -214,14 +151,9 @@ commands = ["ls"]
 }
 
 func TestRunValidateWithInvalidConfig(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with invalid TOML config
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	// Write an invalid config file (bad TOML syntax)
 	invalidConfig := `
 [[commands.simple]]
 name = "test"
@@ -231,16 +163,13 @@ commands = ["foo""]
 		t.Fatal(err)
 	}
 
-	// Initialize config (will fail but set globalConfig to empty defaults)
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	rootCmd.SilenceErrors = true
 
-	// Run validate
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
+	err := rootCmd.Execute()
 	if err == nil {
-		t.Fatal("runValidate() should return error for invalid config")
+		t.Fatal("Execute() should return error for invalid config")
 	}
 
 	if !strings.Contains(err.Error(), "configuration error") {
@@ -249,48 +178,53 @@ commands = ["foo""]
 }
 
 func TestRunValidateWithMissingConfig(t *testing.T) {
-	resetGlobalState()
-
-	// Point to empty directory (no config.toml)
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	config.Reset()
-	config.Init()
+	// No config file written - missing config now succeeds with zero patterns
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	if err == nil {
-		t.Fatal("runValidate() should return error for missing config")
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("Execute() should succeed with missing config, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "configuration error") {
-		t.Errorf("error should contain 'configuration error', got: %v", err)
+	output := stdout.String()
+	if !strings.Contains(output, "Configuration valid!") {
+		t.Errorf("expected 'Configuration valid!' in output, got:\n%s", output)
 	}
 }
 
 func TestValidateCmdUsage(t *testing.T) {
+	rootCmd := buildRootCmd()
+	var validateCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "validate" {
+			validateCmd = cmd
+			break
+		}
+	}
+	if validateCmd == nil {
+		t.Fatal("validate subcommand not found")
+	}
+
 	if validateCmd.Use != "validate" {
 		t.Errorf("validateCmd.Use = %q, want 'validate'", validateCmd.Use)
 	}
-
 	if validateCmd.Short == "" {
 		t.Error("validateCmd.Short should not be empty")
 	}
-
 	if validateCmd.Long == "" {
 		t.Error("validateCmd.Long should not be empty")
 	}
 }
 
 func TestRunValidateShowsSubshellAllowAll(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	testConfig := `
 [subshell]
@@ -304,38 +238,24 @@ commands = ["ls"]
 		t.Fatal(err)
 	}
 
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
+	output := stdout.String()
 	if !strings.Contains(output, "Subshell allow all: true") {
 		t.Errorf("expected 'Subshell allow all: true' in output, got:\n%s", output)
 	}
 }
 
 func TestRunValidateShowsSubshellAllowAllFalse(t *testing.T) {
-	resetGlobalState()
-
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	testConfig := `
 [[commands.simple]]
@@ -346,41 +266,25 @@ commands = ["ls"]
 		t.Fatal(err)
 	}
 
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
+	output := stdout.String()
 	if !strings.Contains(output, "Subshell allow all: false") {
 		t.Errorf("expected 'Subshell allow all: false' in output, got:\n%s", output)
 	}
 }
 
 func TestRunValidateWithEmptyConfig(t *testing.T) {
-	resetGlobalState()
-
-	// Create temp directory with minimal valid config (empty sections)
 	tmpDir := t.TempDir()
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer os.Unsetenv("MMI_CONFIG")
+	t.Setenv("MMI_CONFIG", tmpDir)
 
-	// Write a minimal config with required field
 	emptyConfig := `
 [[commands.simple]]
 name = "minimal"
@@ -390,30 +294,16 @@ commands = ["true"]
 		t.Fatal(err)
 	}
 
-	// Initialize config
-	config.Reset()
-	config.Init()
+	rootCmd := buildRootCmd()
+	rootCmd.SetArgs([]string{"validate", "--no-audit-log"})
+	var stdout bytes.Buffer
+	rootCmd.SetOut(&stdout)
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	cmd := &cobra.Command{}
-	err := runValidate(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	output := buf.String()
-
-	if err != nil {
-		t.Fatalf("runValidate() error = %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Should show zero counts for deny and wrapper patterns
+	output := stdout.String()
 	if !strings.Contains(output, "Deny patterns: 0") {
 		t.Errorf("expected 'Deny patterns: 0' in output, got:\n%s", output)
 	}

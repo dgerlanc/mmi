@@ -31,8 +31,10 @@ func BenchmarkSplitCommandChain(b *testing.B) {
 
 // BenchmarkProcess benchmarks the full command approval process
 func BenchmarkProcess(b *testing.B) {
-	// Ensure config is loaded before benchmark
-	_ = config.Get()
+	cfg, err := config.LoadConfig([]byte(testConfig))
+	if err != nil {
+		b.Fatalf("failed to load config: %v", err)
+	}
 
 	benchmarks := []struct {
 		name  string
@@ -48,7 +50,7 @@ func BenchmarkProcess(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = hook.ProcessWithResult(strings.NewReader(bm.input))
+				_ = hook.ProcessWithResult(strings.NewReader(bm.input), cfg, "", nil)
 			}
 		})
 	}
@@ -56,7 +58,10 @@ func BenchmarkProcess(b *testing.B) {
 
 // BenchmarkStripWrappers benchmarks wrapper stripping
 func BenchmarkStripWrappers(b *testing.B) {
-	cfg := config.Get()
+	cfg, err := config.LoadConfig([]byte(testConfig))
+	if err != nil {
+		b.Fatalf("failed to load config: %v", err)
+	}
 
 	benchmarks := []struct {
 		name string
@@ -80,7 +85,10 @@ func BenchmarkStripWrappers(b *testing.B) {
 
 // BenchmarkCheckSafe benchmarks safe command checking
 func BenchmarkCheckSafe(b *testing.B) {
-	cfg := config.Get()
+	cfg, err := config.LoadConfig([]byte(testConfig))
+	if err != nil {
+		b.Fatalf("failed to load config: %v", err)
+	}
 
 	benchmarks := []struct {
 		name string
@@ -104,7 +112,10 @@ func BenchmarkCheckSafe(b *testing.B) {
 
 // BenchmarkCheckDeny benchmarks deny pattern checking
 func BenchmarkCheckDeny(b *testing.B) {
-	cfg := config.Get()
+	cfg, err := config.LoadConfig([]byte(testConfig))
+	if err != nil {
+		b.Fatalf("failed to load config: %v", err)
+	}
 
 	benchmarks := []struct {
 		name string

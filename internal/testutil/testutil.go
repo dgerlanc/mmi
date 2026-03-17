@@ -2,36 +2,20 @@
 package testutil
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/dgerlanc/mmi/internal/config"
-	"github.com/dgerlanc/mmi/internal/constants"
 )
 
-// SetupTestConfig creates a temporary config directory with test configuration.
-// Returns a cleanup function that should be deferred.
-func SetupTestConfig(t *testing.T, configContent string) func() {
+// LoadTestConfig parses config content and returns a *Config for testing.
+// Fails the test on parse error.
+func LoadTestConfig(t *testing.T, configContent string) *config.Config {
 	t.Helper()
-
-	tmpDir := t.TempDir()
-	os.Setenv(constants.EnvConfigDir, tmpDir)
-
-	if configContent != "" {
-		configPath := filepath.Join(tmpDir, constants.ConfigFileName)
-		if err := os.WriteFile(configPath, []byte(configContent), constants.FileMode); err != nil {
-			t.Fatal(err)
-		}
+	cfg, err := config.LoadConfig([]byte(configContent))
+	if err != nil {
+		t.Fatalf("LoadTestConfig: %v", err)
 	}
-
-	config.Reset()
-	config.Init()
-
-	return func() {
-		os.Unsetenv(constants.EnvConfigDir)
-		config.Reset()
-	}
+	return cfg
 }
 
 // MinimalTestConfig is a minimal config for testing.

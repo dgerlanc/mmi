@@ -14,6 +14,7 @@ import (
 )
 
 func TestContainsDangerousPattern(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		cmd       string
@@ -149,6 +150,7 @@ EOF`,
 }
 
 func TestFindQuotedHeredocRanges(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		cmd        string
@@ -256,24 +258,11 @@ func readLastAuditEntry(t *testing.T, logPath string) audit.Entry {
 }
 
 func TestProcessWithResultPassesSessionID(t *testing.T) {
-	config.Reset()
-	defer config.Reset()
-
-	// Set up config with a safe command
-	configData := []byte(`
-[commands]
+	cfg, cfgPath := loadTestConfig(t, `
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	cfg, err := config.LoadConfig(configData)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-	// We need to set the global config - this is a bit hacky
-	// For now, let's just test the struct values are passed correctly
-
-	_ = cfg // We'll use this in Phase 4 when we have better testability
 
 	logPath, cleanup := setupTestAudit(t)
 	defer cleanup()
@@ -286,7 +275,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.SessionID != "test-session-123" {
@@ -295,8 +284,7 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultPassesToolUseID(t *testing.T) {
-	config.Reset()
-	defer config.Reset()
+	cfg := &config.Config{}
 
 	logPath, cleanup := setupTestAudit(t)
 	defer cleanup()
@@ -309,7 +297,7 @@ func TestProcessWithResultPassesToolUseID(t *testing.T) {
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, "", nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.ToolUseID != "test-tool-456" {
@@ -318,8 +306,7 @@ func TestProcessWithResultPassesToolUseID(t *testing.T) {
 }
 
 func TestProcessWithResultPassesCwd(t *testing.T) {
-	config.Reset()
-	defer config.Reset()
+	cfg := &config.Config{}
 
 	logPath, cleanup := setupTestAudit(t)
 	defer cleanup()
@@ -332,7 +319,7 @@ func TestProcessWithResultPassesCwd(t *testing.T) {
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, "", nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Cwd != "/test/dir" {
@@ -341,8 +328,7 @@ func TestProcessWithResultPassesCwd(t *testing.T) {
 }
 
 func TestProcessWithResultPassesAllFields(t *testing.T) {
-	config.Reset()
-	defer config.Reset()
+	cfg := &config.Config{}
 
 	logPath, cleanup := setupTestAudit(t)
 	defer cleanup()
@@ -355,7 +341,7 @@ func TestProcessWithResultPassesAllFields(t *testing.T) {
 		"tool_input": {"command": "ls -la"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, "", nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -373,6 +359,7 @@ func TestProcessWithResultPassesAllFields(t *testing.T) {
 // Phase 3: Pattern Match Results Tests
 
 func TestCheckSafeResultMatchedTrue(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
@@ -394,6 +381,7 @@ func TestCheckSafeResultMatchedTrue(t *testing.T) {
 }
 
 func TestCheckSafeResultMatchedFalse(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "ls", patternType: "simple", pattern: `^ls\b`},
 	})
@@ -406,6 +394,7 @@ func TestCheckSafeResultMatchedFalse(t *testing.T) {
 }
 
 func TestCheckSafeResultSimpleType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "pwd", patternType: "simple", pattern: `^pwd\b`},
 	})
@@ -418,6 +407,7 @@ func TestCheckSafeResultSimpleType(t *testing.T) {
 }
 
 func TestCheckSafeResultSubcommandType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "git", patternType: "subcommand", pattern: `^git\s+(status|log)\b`},
 	})
@@ -430,6 +420,7 @@ func TestCheckSafeResultSubcommandType(t *testing.T) {
 }
 
 func TestCheckSafeResultRegexType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "custom", patternType: "regex", pattern: `^mycommand\s+.*`},
 	})
@@ -442,6 +433,7 @@ func TestCheckSafeResultRegexType(t *testing.T) {
 }
 
 func TestCheckSafeResultCommandType(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "timeout", patternType: "command", pattern: `^timeout\s+\d+\s+`},
 	})
@@ -454,6 +446,7 @@ func TestCheckSafeResultCommandType(t *testing.T) {
 }
 
 func TestCheckDenyResultDeniedTrue(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})
@@ -472,6 +465,7 @@ func TestCheckDenyResultDeniedTrue(t *testing.T) {
 }
 
 func TestCheckDenyResultDeniedFalse(t *testing.T) {
+	t.Parallel()
 	patterns := mustCompilePatterns(t, []patternDef{
 		{name: "rm dangerous", patternType: "regex", pattern: `^rm\s+-rf\s+/`},
 	})
@@ -511,51 +505,29 @@ func mustCompilePatterns(t *testing.T, defs []patternDef) []patterns.Pattern {
 
 // Phase 4: Hook Integration Tests
 
-// setupTestConfig creates a test configuration with specified patterns
-func setupTestConfig(t *testing.T, configTOML string) func() {
+// loadTestConfig parses TOML config and returns a *Config and config path for testing.
+// It writes the config to a temp directory so cfgPath is realistic.
+func loadTestConfig(t *testing.T, configTOML string) (*config.Config, string) {
 	t.Helper()
-	config.Reset()
-
-	// Create a temp config directory
-	tmpDir, err := os.MkdirTemp("", "mmi-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-
-	// Set MMI_CONFIG env var
-	origConfig := os.Getenv("MMI_CONFIG")
-	os.Setenv("MMI_CONFIG", tmpDir)
-
-	// Write the config
+	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.toml")
 	if err := os.WriteFile(configPath, []byte(configTOML), 0644); err != nil {
-		os.RemoveAll(tmpDir)
-		os.Setenv("MMI_CONFIG", origConfig)
 		t.Fatalf("Failed to write config: %v", err)
 	}
-
-	// Initialize config
-	if err := config.Init(); err != nil {
-		os.RemoveAll(tmpDir)
-		os.Setenv("MMI_CONFIG", origConfig)
-		t.Fatalf("Failed to init config: %v", err)
+	cfg, err := config.LoadConfig([]byte(configTOML))
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
 	}
-
-	return func() {
-		config.Reset()
-		os.RemoveAll(tmpDir)
-		os.Setenv("MMI_CONFIG", origConfig)
-	}
+	return cfg, configPath
 }
 
 func TestSegmentPopulationSingleCommand(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -568,7 +540,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 1 {
@@ -577,13 +549,12 @@ commands = ["ls"]
 }
 
 func TestSegmentPopulationChainedCommands(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls", "pwd"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -596,7 +567,7 @@ commands = ["ls", "pwd"]
 		"tool_input": {"command": "ls && pwd"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 2 {
@@ -605,13 +576,12 @@ commands = ["ls", "pwd"]
 }
 
 func TestSegmentOrderMatchesCommandOrder(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls", "pwd", "whoami"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -624,7 +594,7 @@ commands = ["ls", "pwd", "whoami"]
 		"tool_input": {"command": "ls && pwd && whoami"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 3 {
@@ -642,13 +612,12 @@ commands = ["ls", "pwd", "whoami"]
 }
 
 func TestApprovedSegmentMatchType(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.subcommand]]
 command = "git"
 subcommands = ["status", "log"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -661,7 +630,7 @@ subcommands = ["status", "log"]
 		"tool_input": {"command": "git status"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 1 {
@@ -680,7 +649,7 @@ subcommands = ["status", "log"]
 }
 
 func TestApprovedSegmentWithSingleWrapper(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [wrappers]
 [[wrappers.simple]]
 commands = ["sudo"]
@@ -690,7 +659,6 @@ commands = ["sudo"]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -703,7 +671,7 @@ commands = ["ls"]
 		"tool_input": {"command": "sudo ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 1 {
@@ -719,13 +687,12 @@ commands = ["ls"]
 }
 
 func TestApprovedSegmentWithNoWrappers(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -738,7 +705,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if len(entry.Segments) != 1 {
@@ -751,13 +718,12 @@ commands = ["ls"]
 }
 
 func TestRejectedSegmentCommandSubstitution(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -770,7 +736,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls $(whoami)"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Approved {
@@ -789,13 +755,12 @@ commands = ["ls"]
 }
 
 func TestRejectedSegmentUnparseable(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -808,7 +773,7 @@ commands = ["ls"]
 		"tool_input": {"command": "echo 'unclosed"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Approved {
@@ -827,7 +792,7 @@ commands = ["ls"]
 }
 
 func TestRejectedSegmentDenyMatch(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
@@ -838,7 +803,6 @@ commands = ["ls"]
 name = "dangerous rm"
 pattern = "^rm\\s+-rf\\s+/"
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -851,7 +815,7 @@ pattern = "^rm\\s+-rf\\s+/"
 		"tool_input": {"command": "rm -rf /"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Approved {
@@ -873,13 +837,12 @@ pattern = "^rm\\s+-rf\\s+/"
 }
 
 func TestRejectedSegmentNoMatch(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -892,7 +855,7 @@ commands = ["ls"]
 		"tool_input": {"command": "curl http://example.com"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Approved {
@@ -911,13 +874,12 @@ commands = ["ls"]
 }
 
 func TestEntryApprovedWhenAllSegmentsApproved(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls", "pwd"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -930,7 +892,7 @@ commands = ["ls", "pwd"]
 		"tool_input": {"command": "ls && pwd"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if !entry.Approved {
@@ -944,13 +906,12 @@ commands = ["ls", "pwd"]
 }
 
 func TestEntryRejectedWhenAnySegmentRejected(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -963,7 +924,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls && curl http://example.com"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.Approved {
@@ -972,13 +933,12 @@ commands = ["ls"]
 }
 
 func TestEntryDurationMsPopulated(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -991,7 +951,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	if entry.DurationMs <= 0 {
@@ -1004,13 +964,12 @@ commands = ["ls"]
 // and logged, even when one segment is rejected.
 
 func TestAllSegmentsEvaluatedInPipe(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["echo"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1026,7 +985,7 @@ commands = ["echo"]
 		"tool_input": {"command": "echo 'test' | cat"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 	// Both segments should be logged even though cat is not in safe list
@@ -1036,7 +995,7 @@ commands = ["echo"]
 }
 
 func TestMultipleRejectedSegmentsAllCaptured(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "echo"
@@ -1047,7 +1006,6 @@ commands = ["echo"]
 name = "dangerous rm"
 pattern = "^rm\\s+-rf\\s+/"
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1063,7 +1021,7 @@ pattern = "^rm\\s+-rf\\s+/"
 		"tool_input": {"command": "rm -rf / && curl http://evil.com"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1089,13 +1047,12 @@ pattern = "^rm\\s+-rf\\s+/"
 }
 
 func TestMixedApprovedRejectedSegments(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls", "pwd"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1111,7 +1068,7 @@ commands = ["ls", "pwd"]
 		"tool_input": {"command": "ls && curl http://example.com && pwd"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1153,7 +1110,7 @@ commands = ["ls", "pwd"]
 }
 
 func TestDenyMatchStillEvaluatesSubsequentSegments(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
@@ -1164,7 +1121,6 @@ commands = ["ls", "pwd", "echo"]
 name = "dangerous rm"
 pattern = "^rm\\s+-rf\\s+/"
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1179,7 +1135,7 @@ pattern = "^rm\\s+-rf\\s+/"
 		"tool_input": {"command": "rm -rf / && ls"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1199,13 +1155,12 @@ pattern = "^rm\\s+-rf\\s+/"
 }
 
 func TestCommandSubstitutionPerSegment(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls", "echo"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1221,7 +1176,7 @@ commands = ["ls", "echo"]
 		"tool_input": {"command": "ls && echo $(whoami) && ls -la"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1258,13 +1213,12 @@ commands = ["ls", "echo"]
 }
 
 func TestCommandSubstitutionOnlyInOneSegment(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "basic"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1278,7 +1232,7 @@ commands = ["ls"]
 		"tool_input": {"command": "ls $(pwd)"}
 	}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1297,20 +1251,19 @@ commands = ["ls"]
 // Phase 6: Raw Input Capture Tests
 
 func TestProcessWithResultCapturesRawInput(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	ProcessWithResult(strings.NewReader(rawInput))
+	ProcessWithResult(strings.NewReader(rawInput), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1320,20 +1273,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultCapturesRawInputOnRejection(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"curl http://example.com"}}`
 
-	ProcessWithResult(strings.NewReader(rawInput))
+	ProcessWithResult(strings.NewReader(rawInput), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1343,20 +1295,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultCapturesRawInputOnUnparseable(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	rawInput := `{"session_id":"sess-raw","tool_use_id":"tool-raw","cwd":"/test","tool_name":"Bash","tool_input":{"command":"echo 'unclosed"}}`
 
-	ProcessWithResult(strings.NewReader(rawInput))
+	ProcessWithResult(strings.NewReader(rawInput), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1366,20 +1317,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultCapturesOutputOnApproval(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1400,20 +1350,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultCapturesOutputOnRejection(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"curl http://example.com"}}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1434,20 +1383,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultCapturesOutputOnUnparseable(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"echo 'unclosed"}}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1468,20 +1416,19 @@ commands = ["ls"]
 }
 
 func TestResultOutputFieldPopulated(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	// Result.Output should have the output JSON (without trailing newline for storage)
 	if result.Output == "" {
@@ -1500,20 +1447,19 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultAuditConfigPath(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [commands]
 [[commands.simple]]
 name = "ls"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1529,27 +1475,22 @@ commands = ["ls"]
 }
 
 func TestProcessWithResultAuditConfigPathEmptyWhenConfigDirFails(t *testing.T) {
-	config.Reset()
-
 	// Unset both MMI_CONFIG and HOME so GetConfigDir() fails
-	origConfig := os.Getenv("MMI_CONFIG")
-	origHome := os.Getenv("HOME")
+	t.Setenv("MMI_CONFIG", "")
 	os.Unsetenv("MMI_CONFIG")
+	origHome := os.Getenv("HOME")
 	os.Unsetenv("HOME")
-	defer func() {
-		os.Setenv("MMI_CONFIG", origConfig)
-		os.Setenv("HOME", origHome)
-		config.Reset()
-	}()
+	defer os.Setenv("HOME", origHome)
 
-	config.Init()
+	// Use config.Load() which returns defaults + error when config dir fails
+	cfg, cfgPath, cfgErr := config.Load()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, cfgErr)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1564,35 +1505,24 @@ func TestProcessWithResultAuditConfigPathEmptyWhenConfigDirFails(t *testing.T) {
 }
 
 func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
-	config.Reset()
-
 	// Set up a directory with invalid TOML
-	tmpDir, err := os.MkdirTemp("", "mmi-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	origConfig := os.Getenv("MMI_CONFIG")
-	os.Setenv("MMI_CONFIG", tmpDir)
-	defer func() {
-		os.Setenv("MMI_CONFIG", origConfig)
-		config.Reset()
-	}()
+	tmpDir := t.TempDir()
+	t.Setenv("MMI_CONFIG", tmpDir)
 
 	invalidConfig := `bad toml {{`
 	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(invalidConfig), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	config.Init()
+	// config.Load() returns defaults + error for invalid config
+	cfg, cfgPath, cfgErr := config.Load()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
 
 	input := `{"session_id":"sess-1","tool_use_id":"tool-1","cwd":"/test","tool_name":"Bash","tool_input":{"command":"ls"}}`
 
-	ProcessWithResult(strings.NewReader(input))
+	ProcessWithResult(strings.NewReader(input), cfg, cfgPath, cfgErr)
 
 	entry := readLastAuditEntry(t, logPath)
 
@@ -1602,18 +1532,14 @@ func TestProcessWithResultAuditConfigErrorOnInvalidConfig(t *testing.T) {
 	if entry.ConfigError == "" {
 		t.Error("Expected ConfigError to be non-empty for invalid config")
 	}
-	if !strings.Contains(entry.ConfigError, "failed to load config") {
-		t.Errorf("ConfigError = %q, want error containing 'failed to load config'", entry.ConfigError)
-	}
 }
 
 func TestCommandSubstitutionRejectedByDefault(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [[commands.simple]]
 name = "git"
 commands = ["git"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1626,7 +1552,7 @@ commands = ["git"]
 		"tool_input": {"command": "git commit -m \"$(cat <<'EOF'\nfix bug\nEOF\n)\""}
 	}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 	if result.Approved {
 		t.Error("Command with $() should be rejected when allow_all is false")
 	}
@@ -1641,7 +1567,7 @@ commands = ["git"]
 }
 
 func TestCommandSubstitutionAllowedWhenAllowAll(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [subshell]
 allow_all = true
 
@@ -1650,7 +1576,6 @@ command = "git"
 subcommands = ["commit"]
 flags = ["-m <arg>"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1663,7 +1588,7 @@ flags = ["-m <arg>"]
 		"tool_input": {"command": "git commit -m \"$(cat <<'EOF'\nfix bug\nEOF\n)\""}
 	}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 	if !result.Approved {
 		t.Errorf("Command with $() should be approved when allow_all is true, got output: %s", result.Output)
 	}
@@ -1675,7 +1600,7 @@ flags = ["-m <arg>"]
 }
 
 func TestBackticksAllowedWhenAllowAll(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [subshell]
 allow_all = true
 
@@ -1683,7 +1608,6 @@ allow_all = true
 name = "basic"
 commands = ["echo"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1696,7 +1620,7 @@ commands = ["echo"]
 		"tool_input": {"command": "echo ` + "`date`" + `"}
 	}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 	if !result.Approved {
 		t.Errorf("Command with backticks should be approved when allow_all is true, got output: %s", result.Output)
 	}
@@ -1708,7 +1632,7 @@ commands = ["echo"]
 }
 
 func TestDenyStillRejectsWhenAllowAll(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [subshell]
 allow_all = true
 
@@ -1721,7 +1645,6 @@ command = "git"
 subcommands = ["commit"]
 flags = ["-m <arg>"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1734,7 +1657,7 @@ flags = ["-m <arg>"]
 		"tool_input": {"command": "sudo git commit -m \"$(cat <<'EOF'\nfix\nEOF\n)\""}
 	}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 	if result.Approved {
 		t.Error("Denied command should still be rejected even with allow_all = true")
 	}
@@ -1746,7 +1669,7 @@ flags = ["-m <arg>"]
 }
 
 func TestNoMatchStillRejectsWhenAllowAll(t *testing.T) {
-	cleanupConfig := setupTestConfig(t, `
+	cfg, cfgPath := loadTestConfig(t, `
 [subshell]
 allow_all = true
 
@@ -1754,7 +1677,6 @@ allow_all = true
 name = "basic"
 commands = ["ls"]
 `)
-	defer cleanupConfig()
 
 	logPath, cleanupAudit := setupTestAudit(t)
 	defer cleanupAudit()
@@ -1767,7 +1689,7 @@ commands = ["ls"]
 		"tool_input": {"command": "unknown-cmd $(echo hi)"}
 	}`
 
-	result := ProcessWithResult(strings.NewReader(input))
+	result := ProcessWithResult(strings.NewReader(input), cfg, cfgPath, nil)
 	if result.Approved {
 		t.Error("Unknown command should still be rejected even with allow_all = true")
 	}

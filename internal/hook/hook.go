@@ -164,15 +164,20 @@ func containsDangerousPattern(cmd string) bool {
 
 // Read a command and return whether it should be approved and the reason.
 // Returns false for parse errors, non-Bash tools, dangerous patterns, or unsafe commands.
-func Process(r io.Reader) (approved bool, reason string) {
-	result := ProcessWithResult(r)
+func Process(r io.Reader, cfg *config.Config, cfgPath string, cfgErr error) (approved bool, reason string) {
+	result := ProcessWithResult(r, cfg, cfgPath, cfgErr)
 	return result.Approved, result.Reason
 }
 
 // ProcessWithResult reads from a stream and returns a Result with full details.
 // This is useful when the caller needs the original command for logging.
-func ProcessWithResult(r io.Reader) Result {
+func ProcessWithResult(r io.Reader, cfg *config.Config, cfgPath string, cfgErr error) Result {
 	startTime := time.Now()
+
+	var configError string
+	if cfgErr != nil {
+		configError = cfgErr.Error()
+	}
 
 	// Read raw JSON first so we can log it
 	rawBytes, err := io.ReadAll(r)
@@ -199,8 +204,6 @@ func ProcessWithResult(r io.Reader) Result {
 	cmd := input.ToolInput.Command
 	logger.Debug("processing command", "command", cmd)
 
-	cfg := config.Get()
-
 	cmdSegments, err := SplitCommandChain(cmd)
 	if err != nil {
 		logger.Debug("rejected unparseable command", "command", cmd)
@@ -211,7 +214,7 @@ func ProcessWithResult(r io.Reader) Result {
 			Rejection: &audit.Rejection{Code: audit.CodeUnparseable, Detail: "parse error"},
 		}}
 		output := FormatAsk("unparseable command")
-		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+		logAudit(cmd, false, segments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output, cfgPath, configError)
 		return Result{Command: cmd, Approved: false, Reason: "unparseable command", Output: output}
 	}
 	logger.Debug("split command chain", "segments", len(cmdSegments))
@@ -309,13 +312,13 @@ func ProcessWithResult(r io.Reader) Result {
 		} else {
 			output = FormatAsk("command not in allow list")
 		}
-		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output, cfgPath, configError)
 		return Result{Command: cmd, Approved: false, Output: output}
 	}
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
 	output := FormatApproval(reason)
-	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
+	logAudit(cmd, true, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output, cfgPath, configError)
 	return Result{Command: cmd, Approved: true, Reason: reason, Output: output}
 }
 
@@ -364,12 +367,7 @@ func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 }
 
 // logAudit logs a command decision to the audit log.
-func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput string) {
-	configPath := config.GetConfigPath()
-	var configError string
-	if err := config.InitError(); err != nil {
-		configError = err.Error()
-	}
+func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput, configPath, configError string) {
 	audit.Log(audit.Entry{
 		Version:     AuditVersion,
 		SessionID:   sessionID,

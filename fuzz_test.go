@@ -9,8 +9,13 @@ import (
 )
 
 // getTestConfig returns a test configuration with default patterns
-func getTestConfig() *config.Config {
-	return config.Get()
+func getTestConfig(t testing.TB) *config.Config {
+	t.Helper()
+	cfg, err := config.LoadConfig([]byte(testConfig))
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	return cfg
 }
 
 // FuzzSplitCommandChain tests the command chain splitting for crashes
@@ -39,6 +44,8 @@ func FuzzSplitCommandChain(f *testing.F) {
 
 // FuzzProcess tests the full command processing for crashes
 func FuzzProcess(f *testing.F) {
+	cfg := getTestConfig(f)
+
 	// Add seed corpus with valid JSON inputs
 	f.Add(`{"tool_name":"Bash","tool_input":{"command":"git status"}}`)
 	f.Add(`{"tool_name":"Bash","tool_input":{"command":"ls -la"}}`)
@@ -53,12 +60,14 @@ func FuzzProcess(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// Just ensure no panics
-		_ = hook.ProcessWithResult(strings.NewReader(input))
+		_ = hook.ProcessWithResult(strings.NewReader(input), cfg, "", nil)
 	})
 }
 
 // FuzzStripWrappers tests wrapper stripping for crashes
 func FuzzStripWrappers(f *testing.F) {
+	cfg := getTestConfig(f)
+
 	// Add seed corpus
 	f.Add("timeout 30 pytest")
 	f.Add("env VAR=value cmd")
@@ -70,14 +79,14 @@ func FuzzStripWrappers(f *testing.F) {
 	f.Add("   ")
 
 	f.Fuzz(func(t *testing.T, cmd string) {
-		// Get config and test with default patterns
-		cfg := getTestConfig()
 		_, _ = hook.StripWrappers(cmd, cfg.WrapperPatterns)
 	})
 }
 
 // FuzzCheckSafe tests safe command checking for crashes
 func FuzzCheckSafe(f *testing.F) {
+	cfg := getTestConfig(f)
+
 	// Add seed corpus
 	f.Add("git status")
 	f.Add("git log --oneline")
@@ -89,13 +98,14 @@ func FuzzCheckSafe(f *testing.F) {
 	f.Add("unknown-command")
 
 	f.Fuzz(func(t *testing.T, cmd string) {
-		cfg := getTestConfig()
 		_ = hook.CheckSafe(cmd, cfg.SafeCommands)
 	})
 }
 
 // FuzzCheckDeny tests deny checking for crashes
 func FuzzCheckDeny(f *testing.F) {
+	cfg := getTestConfig(f)
+
 	// Add seed corpus
 	f.Add("sudo rm -rf /")
 	f.Add("su - root")
@@ -106,7 +116,6 @@ func FuzzCheckDeny(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(t *testing.T, cmd string) {
-		cfg := getTestConfig()
 		_ = hook.CheckDeny(cmd, cfg.DenyPatterns)
 	})
 }

@@ -29,17 +29,6 @@ type Config struct {
 	SubshellAllowAll bool
 }
 
-var (
-	// globalConfig is the loaded configuration
-	globalConfig *Config
-	// configInitialized tracks whether config has been loaded
-	configInitialized bool
-	// globalInitError stores any error from the last Init() call
-	globalInitError error
-	// globalConfigPath stores the config file path used by Init()
-	globalConfigPath string
-)
-
 // GetConfigDir returns the config directory path.
 // Uses MMI_CONFIG env var if set, otherwise ~/.config/mmi
 func GetConfigDir() (string, error) {
@@ -366,83 +355,37 @@ func loadEmbeddedDefaults() *Config {
 	return &Config{}
 }
 
-// Init loads configuration from files.
-// If loading fails, it falls back to embedded defaults.
-// Note: This does not auto-create config files. Use EnsureConfigFiles() if needed.
-func Init() error {
-	if configInitialized {
-		return nil
-	}
-
+// Load loads configuration from the config file on disk.
+// It always returns a non-nil *Config: on any error it falls back to embedded defaults.
+// The returned string is the config file path (empty when no file was found).
+func Load() (*Config, string, error) {
 	configDir, err := GetConfigDir()
 	if err != nil {
-		logger.Debug("failed to get config dir, using embedded defaults", "error", err)
-		globalConfig = loadEmbeddedDefaults()
-		globalInitError = err
-		configInitialized = true
-		return err
+		return loadEmbeddedDefaults(), "", fmt.Errorf("resolving config directory: %w", err)
 	}
-
 	configPath := filepath.Join(configDir, constants.ConfigFileName)
-	globalConfigPath = configPath
 
-	configData, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		logger.Debug("failed to read config file, using embedded defaults", "path", configPath, "error", err)
-		globalConfig = loadEmbeddedDefaults()
-		initErr := fmt.Errorf("failed to read config.toml: %w", err)
-		globalInitError = initErr
-		configInitialized = true
-		return initErr
+		if os.IsNotExist(err) {
+			return loadEmbeddedDefaults(), "", nil
+		}
+		return loadEmbeddedDefaults(), "", err
 	}
 
-	globalConfig, err = LoadConfigWithDir(configData, configDir)
+	cfg, err := LoadConfigWithDir(data, configDir)
 	if err != nil {
-		logger.Debug("failed to parse config, using embedded defaults", "error", err)
-		globalConfig = loadEmbeddedDefaults()
-		initErr := fmt.Errorf("failed to load config: %w", err)
-		globalInitError = initErr
-		configInitialized = true
-		return initErr
+		return loadEmbeddedDefaults(), configPath, err
 	}
 
 	logger.Debug("config loaded successfully",
 		"path", configPath,
-		"wrappers", len(globalConfig.WrapperPatterns),
-		"commands", len(globalConfig.SafeCommands))
-	globalInitError = nil
-	configInitialized = true
-	return nil
-}
-
-// Get returns the current configuration.
-// If Init has not been called, it initializes with defaults.
-func Get() *Config {
-	if !configInitialized {
-		Init()
-	}
-	return globalConfig
-}
-
-// InitError returns the error from the last Init() call, if any.
-// This allows callers like the validate command to detect config parse failures
-// that Init() handled by falling back to embedded defaults.
-func InitError() error {
-	return globalInitError
-}
-
-// GetConfigPath returns the config file path used by Init().
-// Returns empty string if Init() has not been called or after Reset().
-func GetConfigPath() string {
-	return globalConfigPath
-}
-
-// Reset resets the configuration state. Used for testing.
-func Reset() {
-	configInitialized = false
-	globalConfig = nil
-	globalInitError = nil
-	globalConfigPath = ""
+		"safe_commands", len(cfg.SafeCommands),
+		"wrappers", len(cfg.WrapperPatterns),
+		"deny_patterns", len(cfg.DenyPatterns),
+		"subshell_allow_all", cfg.SubshellAllowAll,
+	)
+	return cfg, configPath, nil
 }
 
 // GetDefaultConfig returns the embedded default configuration.
