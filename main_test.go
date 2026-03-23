@@ -92,6 +92,17 @@ name = "venv activate"
 [[commands.regex]]
 pattern = '^[A-Z_][A-Z0-9_]*=\S*$'
 name = "var assignment"
+
+# Rewrites
+[[rewrites.simple]]
+name = "use uv for python"
+match = ["python", "python3"]
+replace = "uv run python"
+
+[[rewrites.regex]]
+name = "use uv for pip"
+pattern = '^pip3?\b'
+replace = "uv pip"
 `
 
 // TestMain sets up config for all tests
@@ -131,7 +142,7 @@ func TestProcess(t *testing.T) {
 		{"chained commands", `{"tool_name":"Bash","tool_input":{"command":"git add . && git status"}}`, true, "git | git"},
 		{"with wrapper", `{"tool_name":"Bash","tool_input":{"command":"timeout 30 pytest -v"}}`, true, "timeout + simple"},
 		{"env vars wrapper", `{"tool_name":"Bash","tool_input":{"command":"FOO=bar pytest"}}`, true, "env vars + simple"},
-		{"venv wrapper", `{"tool_name":"Bash","tool_input":{"command":".venv/bin/python script.py"}}`, true, ".venv + simple"},
+		{"venv wrapper", `{"tool_name":"Bash","tool_input":{"command":".venv/bin/ruby script.rb"}}`, true, ".venv + simple"},
 
 		// Unsafe commands
 		{"command substitution", `{"tool_name":"Bash","tool_input":{"command":"echo $(whoami)"}}`, false, ""},
@@ -158,6 +169,68 @@ func TestProcess(t *testing.T) {
 			}
 			if reason != tt.expectReason {
 				t.Errorf("Process() reason = %q, want %q", reason, tt.expectReason)
+			}
+		})
+	}
+}
+
+func TestProcessRewriteIntegration(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectApproved bool
+		expectReason   string
+	}{
+		{
+			"rewrite python3",
+			`{"tool_name":"Bash","tool_input":{"command":"python3 script.py"}}`,
+			false,
+			`use "uv run python script.py" instead of "python3 script.py"`,
+		},
+		{
+			"rewrite pip",
+			`{"tool_name":"Bash","tool_input":{"command":"pip install requests"}}`,
+			false,
+			`use "uv pip install requests" instead of "pip install requests"`,
+		},
+		{
+			"rewrite pip3",
+			`{"tool_name":"Bash","tool_input":{"command":"pip3 install requests"}}`,
+			false,
+			`use "uv pip install requests" instead of "pip3 install requests"`,
+		},
+		{
+			"chain with rewrite",
+			`{"tool_name":"Bash","tool_input":{"command":"git status && python3 script.py"}}`,
+			false,
+			`use "uv run python script.py" instead of "python3 script.py"`,
+		},
+		{
+			"no rewrite for safe command",
+			`{"tool_name":"Bash","tool_input":{"command":"git status"}}`,
+			true,
+			"git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hook.ProcessWithResult(strings.NewReader(tt.input))
+			if result.Approved != tt.expectApproved {
+				t.Errorf("Approved = %v, want %v (output: %s)", result.Approved, tt.expectApproved, result.Output)
+			}
+			if tt.expectApproved {
+				if result.Reason != tt.expectReason {
+					t.Errorf("Reason = %q, want %q", result.Reason, tt.expectReason)
+				}
+			} else {
+				var output hook.Output
+				if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
+					t.Fatalf("failed to parse output: %v", err)
+				}
+				if output.HookSpecificOutput.PermissionDecisionReason != tt.expectReason {
+					t.Errorf("reason = %q, want %q", output.HookSpecificOutput.PermissionDecisionReason, tt.expectReason)
+				}
 			}
 		})
 	}
