@@ -1883,3 +1883,120 @@ commands = ["ls"]
 		t.Errorf("Rejection.Code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodeNoMatch)
 	}
 }
+
+func TestProcessWithResultRewrite(t *testing.T) {
+	// Set up config with a safe python command AND a rewrite rule
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	cfgData := `
+[[commands.simple]]
+name = "python"
+commands = ["python", "python3"]
+
+[[commands.subcommand]]
+command = "git"
+subcommands = ["status"]
+
+[[rewrites.simple]]
+name = "use uv"
+match = ["python", "python3"]
+replace = "uv run python"
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(cfgData), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.Reset()
+	config.Init()
+	defer config.Reset()
+
+	tests := []struct {
+		name       string
+		command    string
+		wantAsk    bool
+		wantReason string
+	}{
+		{
+			name:       "safe command with rewrite gets rewritten",
+			command:    "python3 script.py",
+			wantAsk:    true,
+			wantReason: `rewrite: use "uv run python script.py" instead of "python3 script.py"`,
+		},
+		{
+			name:       "no rewrite match gets approved",
+			command:    "git status",
+			wantAsk:    false,
+			wantReason: "",
+		},
+		{
+			name:       "chain with rewrite",
+			command:    "git status && python3 script.py",
+			wantAsk:    true,
+			wantReason: `rewrite: use "uv run python script.py" instead of "python3 script.py"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `{"tool_name":"Bash","tool_input":{"command":"` + tt.command + `"}}`
+			result := ProcessWithResult(strings.NewReader(input))
+
+			if tt.wantAsk {
+				if result.Approved {
+					t.Error("expected rejection, got approval")
+				}
+				// Parse the output JSON to check reason
+				var output Output
+				if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
+					t.Fatalf("failed to parse output: %v", err)
+				}
+				if output.HookSpecificOutput.PermissionDecision != DecisionAsk {
+					t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, DecisionAsk)
+				}
+				if output.HookSpecificOutput.PermissionDecisionReason != tt.wantReason {
+					t.Errorf("reason = %q, want %q", output.HookSpecificOutput.PermissionDecisionReason, tt.wantReason)
+				}
+			} else {
+				if !result.Approved {
+					t.Errorf("expected approval, got rejection: %s", result.Output)
+				}
+			}
+		})
+	}
+}
+
+func TestProcessWithResultRewriteSkipsDeny(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	cfgData := `
+[[deny.simple]]
+name = "no sudo"
+commands = ["sudo"]
+
+[[rewrites.simple]]
+name = "rewrite sudo"
+match = ["sudo"]
+replace = "doas"
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(cfgData), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.Reset()
+	config.Init()
+	defer config.Reset()
+
+	input := `{"tool_name":"Bash","tool_input":{"command":"sudo apt install foo"}}`
+	result := ProcessWithResult(strings.NewReader(input))
+
+	// Should be denied, not rewritten
+	var output Output
+	if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, "deny")
+	}
+}

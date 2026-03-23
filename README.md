@@ -87,7 +87,7 @@ Or set a custom location via the `MMI_CONFIG` environment variable.
 
 ### Configuration Structure
 
-The config file has three main sections:
+The config file has four main sections:
 
 ```toml
 # Deny list - patterns always rejected (checked first)
@@ -121,6 +121,17 @@ flags = ["-C <arg>"]
 [[commands.regex]]
 pattern = '^(true|false|exit(\s+\d+)?)$'
 name = "shell builtin"
+
+# Rewrites - reject and suggest corrected alternatives
+[[rewrites.simple]]
+name = "use uv for python"
+match = ["python", "python3"]
+replace = "uv run python"
+
+[[rewrites.regex]]
+name = "use uv for pip"
+pattern = '^pip3?\b'
+replace = "uv pip"
 ```
 
 ### Config Includes
@@ -195,11 +206,12 @@ mmi completion powershell > mmi.ps1
 
 ## How It Works
 
-`mmi` uses a three-layer approval model:
+`mmi` uses a four-layer approval model:
 
 1. **Deny List** - Patterns that are always rejected (checked first)
 2. **Wrappers** - Safe command prefixes that can wrap any approved command
 3. **Safe Commands** - Allowlisted commands that are safe to execute
+4. **Rewrites** - Patterns that reject the command and suggest a corrected alternative
 
 When a command is submitted, `mmi`:
 
@@ -210,8 +222,9 @@ When a command is submitted, `mmi`:
    - Checks deny list
    - Strips safe wrappers
    - Checks deny list again on core command
+   - Checks rewrite rules (fires regardless of safe list match)
    - Checks if core command matches safe patterns
-3. Approves only if ALL segments pass all checks
+3. Approves only if ALL segments pass all checks and no rewrites match
 4. Logs all segments to audit trail (all segments are evaluated even if earlier ones fail)
 
 ## Default Approved Commands
@@ -307,6 +320,32 @@ Copy from `examples/` to enable language-specific commands:
 }
 ```
 
+**Rewritten command:**
+```json
+{
+  "version": 1,
+  "tool_use_id": "toolu_ghi789",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-01-15T10:30:10.2Z",
+  "duration_ms": 0.35,
+  "command": "python3 script.py",
+  "approved": false,
+  "segments": [
+    {
+      "command": "python3 script.py",
+      "approved": false,
+      "rejection": {
+        "code": "REWRITE",
+        "name": "use uv for python",
+        "pattern": "^python3\\b",
+        "detail": "uv run python script.py"
+      }
+    }
+  ],
+  "cwd": "/home/user/project"
+}
+```
+
 </details>
 
 <details>
@@ -332,17 +371,52 @@ Copy from `examples/` to enable language-specific commands:
 
 </details>
 
+## Command Rewrites
+
+Rewrites let you enforce preferred tooling by rejecting commands and suggesting corrected alternatives. When a rewrite rule matches, `mmi` denies the command with a reason containing the suggested command, prompting Claude to retry with the correct command.
+
+Rewrites are checked after deny/wrapper processing but fire **regardless of whether the command is safe-listed**. Deny-matched and dangerous-pattern segments are never rewritten. In command chains, each rewritten segment is reported individually.
+
+### Simple Rewrites
+
+Match command names and replace the prefix, preserving arguments:
+
+```toml
+[[rewrites.simple]]
+name = "use uv for python"
+match = ["python", "python3"]
+replace = "uv run python"
+```
+
+`python3 script.py --verbose` → suggests `uv run python script.py --verbose`
+
+### Regex Rewrites
+
+Match a pattern with capture group support via `Regexp.ReplaceAllString`:
+
+```toml
+[[rewrites.regex]]
+name = "use uv for pip"
+pattern = '^pip3?\b'
+replace = "uv pip"
+```
+
+`pip3 install requests` → suggests `uv pip install requests`
+
+Rewrite rules from included config files are merged by appending. The first matching rule wins.
+
 ## Security Model
 
 `mmi` follows a **fail-secure default**:
 
-- Deny patterns are checked first and override all approvals
+- Deny patterns are checked first and override all approvals (including rewrites)
 - Unrecognized commands are automatically rejected
 - Unparseable commands (incomplete syntax, unclosed quotes) are rejected
 - Command substitution (`$(...)` and backticks) is always rejected (except in quoted heredocs)
-- Command chains are only approved if ALL segments are safe
+- Command chains are only approved if ALL segments are safe and no rewrites match
 - All segments are evaluated and logged even if earlier segments fail
 - Only explicitly allowlisted patterns are allowed
+- Rewrite suggestions are hints, not bypasses — the rewritten command goes through the full approval pipeline from scratch
 - Shell loops (`while`, `for`) must be complete; their inner commands are extracted and validated individually
 
 ## Example Configurations
@@ -417,6 +491,7 @@ Audit logs are written to `~/.local/share/mmi/audit.log` in JSON-lines format. E
 
 Common causes:
 - **Deny list priority**: Deny patterns are checked first and override all approvals
+- **Rewrite rules**: A rewrite rule may match the command even if it's safe-listed — rewrites take priority over safe matches
 - **Command substitution**: Commands containing `$(...)` or backticks are rejected (except in quoted heredocs)
 - **Command chains**: If using `&&`, `||`, `|`, or `;`, all segments must be approved
 - **Pattern mismatch**: Use `mmi validate` to verify your patterns and `--verbose` to see why rejection occurred

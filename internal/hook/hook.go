@@ -4,6 +4,7 @@ package hook
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -26,6 +27,7 @@ const EventPreToolUse = "PreToolUse"
 const (
 	DecisionAllow = "allow"
 	DecisionAsk   = "ask"
+	DecisionDeny  = "deny"
 )
 
 // Audit log version
@@ -220,6 +222,8 @@ func ProcessWithResult(r io.Reader) Result {
 	var auditSegments []audit.Segment
 	overallApproved := true
 	hasDenyMatch := false
+	hasRewrite := false
+	var rewriteSuggestions []string
 
 	// Evaluate ALL segments - don't return early on rejection
 	for i, segment := range cmdSegments {
@@ -267,6 +271,28 @@ func ProcessWithResult(r io.Reader) Result {
 
 		// Check safe patterns
 		safeResult := CheckSafe(coreCmd, cfg.SafeCommands)
+
+		// Check rewrite rules (regardless of safe match)
+		rewriteResult := CheckRewrite(coreCmd, cfg.RewriteRules)
+		if rewriteResult.Matched {
+			logger.Debug("rewrite matched", "command", coreCmd, "replacement", rewriteResult.Replacement)
+			overallApproved = false
+			hasRewrite = true
+			rewriteSuggestions = append(rewriteSuggestions, fmt.Sprintf("use %q instead of %q", rewriteResult.Replacement, coreCmd))
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:  segment,
+				Approved: false,
+				Wrappers: wrappers,
+				Rejection: &audit.Rejection{
+					Code:    audit.CodeRewrite,
+					Name:    rewriteResult.Name,
+					Pattern: rewriteResult.Pattern,
+					Detail:  rewriteResult.Replacement,
+				},
+			})
+			continue
+		}
+
 		if !safeResult.Matched {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
 			overallApproved = false
@@ -306,6 +332,9 @@ func ProcessWithResult(r io.Reader) Result {
 		var output string
 		if hasDenyMatch {
 			output = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"command matches deny list"}}`
+		} else if hasRewrite {
+			reason := strings.Join(rewriteSuggestions, "; ")
+			output = FormatDeny(reason)
 		} else {
 			output = FormatAsk("command not in allow list")
 		}
@@ -451,6 +480,23 @@ func FormatAsk(reason string) string {
 	if err != nil {
 		logger.Debug("failed to marshal ask output", "error", err)
 		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"internal error"}}`
+	}
+	return string(data)
+}
+
+// FormatDeny returns the JSON deny output
+func FormatDeny(reason string) string {
+	output := Output{
+		HookSpecificOutput: SpecificOutput{
+			HookEventName:            EventPreToolUse,
+			PermissionDecision:       DecisionDeny,
+			PermissionDecisionReason: reason,
+		},
+	}
+	data, err := json.Marshal(output)
+	if err != nil {
+		logger.Debug("failed to marshal deny output", "error", err)
+		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"internal error"}}`
 	}
 	return string(data)
 }
