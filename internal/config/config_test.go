@@ -553,6 +553,161 @@ commands = ["echo"]
 	}
 }
 
+func TestLoadConfigRewritesSimple(t *testing.T) {
+	data := []byte(`
+[[rewrites.simple]]
+name = "use uv"
+match = ["python", "python3"]
+replace = "uv run python"
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if len(cfg.RewriteRules) != 2 {
+		t.Fatalf("expected 2 rewrite rules, got %d", len(cfg.RewriteRules))
+	}
+	if cfg.RewriteRules[0].Name != "use uv" {
+		t.Errorf("Name = %q, want %q", cfg.RewriteRules[0].Name, "use uv")
+	}
+	if cfg.RewriteRules[0].Replace != "uv run python" {
+		t.Errorf("Replace = %q, want %q", cfg.RewriteRules[0].Replace, "uv run python")
+	}
+	if cfg.RewriteRules[0].Type != "simple" {
+		t.Errorf("Type = %q, want %q", cfg.RewriteRules[0].Type, "simple")
+	}
+}
+
+func TestLoadConfigRewritesRegex(t *testing.T) {
+	data := []byte(`
+[[rewrites.regex]]
+name = "use uv for pip"
+pattern = '^pip3?\b'
+replace = "uv pip"
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if len(cfg.RewriteRules) != 1 {
+		t.Fatalf("expected 1 rewrite rule, got %d", len(cfg.RewriteRules))
+	}
+	if cfg.RewriteRules[0].Name != "use uv for pip" {
+		t.Errorf("Name = %q, want %q", cfg.RewriteRules[0].Name, "use uv for pip")
+	}
+	if cfg.RewriteRules[0].Type != "regex" {
+		t.Errorf("Type = %q, want %q", cfg.RewriteRules[0].Type, "regex")
+	}
+}
+
+func TestLoadConfigRewritesSimpleMissingMatch(t *testing.T) {
+	data := []byte(`
+[[rewrites.simple]]
+name = "use uv"
+replace = "uv run python"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing match field")
+	}
+	if !strings.Contains(err.Error(), "rewrites.simple[0]") {
+		t.Errorf("error should reference rewrites.simple[0], got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "\"match\" field is required") {
+		t.Errorf("error should mention match field, got: %v", err)
+	}
+}
+
+func TestLoadConfigRewritesSimpleMissingReplace(t *testing.T) {
+	data := []byte(`
+[[rewrites.simple]]
+name = "use uv"
+match = ["python"]
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing replace field")
+	}
+	if !strings.Contains(err.Error(), "\"replace\" field is required") {
+		t.Errorf("error should mention replace field, got: %v", err)
+	}
+}
+
+func TestLoadConfigRewritesRegexMissingPattern(t *testing.T) {
+	data := []byte(`
+[[rewrites.regex]]
+name = "use uv"
+replace = "uv pip"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing pattern field")
+	}
+	if !strings.Contains(err.Error(), "rewrites.regex[0]") {
+		t.Errorf("error should reference rewrites.regex[0], got: %v", err)
+	}
+}
+
+func TestLoadConfigRewritesRegexMissingReplace(t *testing.T) {
+	data := []byte(`
+[[rewrites.regex]]
+name = "use uv"
+pattern = '^pip3?\b'
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for missing replace field")
+	}
+}
+
+func TestLoadConfigRewritesRegexInvalidPattern(t *testing.T) {
+	data := []byte(`
+[[rewrites.regex]]
+name = "bad"
+pattern = '[invalid'
+replace = "foo"
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for invalid regex")
+	}
+}
+
+func TestLoadConfigRewritesMergeIncludes(t *testing.T) {
+	dir := t.TempDir()
+
+	mainConfig := []byte(`
+include = ["extra.toml"]
+
+[[rewrites.simple]]
+name = "main rewrite"
+match = ["python"]
+replace = "uv run python"
+`)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), mainConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extraConfig := []byte(`
+[[rewrites.simple]]
+name = "extra rewrite"
+match = ["pip"]
+replace = "uv pip"
+`)
+	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigWithDir(mainConfig, dir)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDir failed: %v", err)
+	}
+
+	if len(cfg.RewriteRules) != 2 {
+		t.Errorf("expected 2 rewrite rules after merge, got %d", len(cfg.RewriteRules))
+	}
+}
+
 func TestGetConfigPathAfterReset(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("MMI_CONFIG", tmpDir)

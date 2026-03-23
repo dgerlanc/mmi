@@ -27,6 +27,8 @@ type Config struct {
 	DenyPatterns []patterns.Pattern
 	// SubshellAllowAll when true skips command substitution rejection
 	SubshellAllowAll bool
+	// RewriteRules are patterns that trigger command rewrite suggestions
+	RewriteRules []patterns.RewriteRule
 }
 
 var (
@@ -268,6 +270,7 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			// If an included file omits [subshell], its zero value (false) will
 			// overwrite a previous include's true. This is the safer default.
 			cfg.SubshellAllowAll = includeCfg.SubshellAllowAll
+			cfg.RewriteRules = append(cfg.RewriteRules, includeCfg.RewriteRules...)
 		}
 	}
 
@@ -301,6 +304,15 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 		if allowAll, ok := subshellSection["allow_all"].(bool); ok {
 			cfg.SubshellAllowAll = allowAll
 		}
+	}
+
+	// Parse rewrites section
+	if rewritesSection, ok := raw["rewrites"].(map[string]any); ok {
+		rewrites, err := parseRewriteSection(rewritesSection)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse rewrites: %w", err)
+		}
+		cfg.RewriteRules = append(cfg.RewriteRules, rewrites...)
 	}
 
 	return cfg, nil
@@ -353,6 +365,83 @@ func parseDenySection(sectionData map[string]any) ([]patterns.Pattern, error) {
 					return nil, fmt.Errorf("invalid deny regex pattern %q: %w", pattern, err)
 				}
 				result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "regex", Pattern: pattern})
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// parseRewriteSection parses the rewrites section of the config.
+// Rewrite rules use simple and regex subsections.
+func parseRewriteSection(sectionData map[string]any) ([]patterns.RewriteRule, error) {
+	var result []patterns.RewriteRule
+
+	for sectionType, value := range sectionData {
+		switch sectionType {
+		case "simple":
+			entries := toMapSlice(value)
+			for i, entry := range entries {
+				name, _ := entry["name"].(string)
+				cmds := toStringSlice(entry["match"])
+				replace, _ := entry["replace"].(string)
+				if len(cmds) == 0 {
+					if name != "" {
+						return nil, fmt.Errorf("rewrites.simple[%d] %q: \"match\" field is required and must not be empty", i, name)
+					}
+					return nil, fmt.Errorf("rewrites.simple[%d]: \"match\" field is required and must not be empty", i)
+				}
+				if replace == "" {
+					if name != "" {
+						return nil, fmt.Errorf("rewrites.simple[%d] %q: \"replace\" field is required and must not be empty", i, name)
+					}
+					return nil, fmt.Errorf("rewrites.simple[%d]: \"replace\" field is required and must not be empty", i)
+				}
+				for _, cmd := range cmds {
+					pattern := patterns.BuildSimplePattern(cmd)
+					re, err := regexp.Compile(pattern)
+					if err != nil {
+						return nil, fmt.Errorf("invalid rewrite pattern for command %q: %w", cmd, err)
+					}
+					result = append(result, patterns.RewriteRule{
+						Regex:   re,
+						Name:    name,
+						Type:    "simple",
+						Pattern: pattern,
+						Replace: replace,
+					})
+				}
+			}
+
+		case "regex":
+			entries := toMapSlice(value)
+			for i, entry := range entries {
+				pattern, _ := entry["pattern"].(string)
+				name, _ := entry["name"].(string)
+				replace, _ := entry["replace"].(string)
+				if pattern == "" {
+					if name != "" {
+						return nil, fmt.Errorf("rewrites.regex[%d] %q: \"pattern\" field is required and must not be empty", i, name)
+					}
+					return nil, fmt.Errorf("rewrites.regex[%d]: \"pattern\" field is required and must not be empty", i)
+				}
+				if replace == "" {
+					if name != "" {
+						return nil, fmt.Errorf("rewrites.regex[%d] %q: \"replace\" field is required and must not be empty", i, name)
+					}
+					return nil, fmt.Errorf("rewrites.regex[%d]: \"replace\" field is required and must not be empty", i)
+				}
+				re, err := regexp.Compile(pattern)
+				if err != nil {
+					return nil, fmt.Errorf("invalid rewrite regex pattern %q: %w", pattern, err)
+				}
+				result = append(result, patterns.RewriteRule{
+					Regex:   re,
+					Name:    name,
+					Type:    "regex",
+					Pattern: pattern,
+					Replace: replace,
+				})
 			}
 		}
 	}
