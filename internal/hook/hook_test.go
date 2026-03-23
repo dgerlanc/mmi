@@ -1914,26 +1914,26 @@ replace = "uv run python"
 	tests := []struct {
 		name       string
 		command    string
-		wantAsk    bool
+		wantDeny   bool
 		wantReason string
 	}{
 		{
 			name:       "safe command with rewrite gets rewritten",
 			command:    "python3 script.py",
-			wantAsk:    true,
-			wantReason: `rewrite: use "uv run python script.py" instead of "python3 script.py"`,
+			wantDeny:   true,
+			wantReason: `use "uv run python script.py" instead of "python3 script.py"`,
 		},
 		{
 			name:       "no rewrite match gets approved",
 			command:    "git status",
-			wantAsk:    false,
+			wantDeny:   false,
 			wantReason: "",
 		},
 		{
 			name:       "chain with rewrite",
 			command:    "git status && python3 script.py",
-			wantAsk:    true,
-			wantReason: `rewrite: use "uv run python script.py" instead of "python3 script.py"`,
+			wantDeny:   true,
+			wantReason: `use "uv run python script.py" instead of "python3 script.py"`,
 		},
 	}
 
@@ -1942,7 +1942,7 @@ replace = "uv run python"
 			input := `{"tool_name":"Bash","tool_input":{"command":"` + tt.command + `"}}`
 			result := ProcessWithResult(strings.NewReader(input))
 
-			if tt.wantAsk {
+			if tt.wantDeny {
 				if result.Approved {
 					t.Error("expected rejection, got approval")
 				}
@@ -1951,8 +1951,8 @@ replace = "uv run python"
 				if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
 					t.Fatalf("failed to parse output: %v", err)
 				}
-				if output.HookSpecificOutput.PermissionDecision != DecisionAsk {
-					t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, DecisionAsk)
+				if output.HookSpecificOutput.PermissionDecision != DecisionDeny {
+					t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, DecisionDeny)
 				}
 				if output.HookSpecificOutput.PermissionDecisionReason != tt.wantReason {
 					t.Errorf("reason = %q, want %q", output.HookSpecificOutput.PermissionDecisionReason, tt.wantReason)
@@ -1998,5 +1998,48 @@ replace = "doas"
 	}
 	if output.HookSpecificOutput.PermissionDecision != "deny" {
 		t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, "deny")
+	}
+}
+
+func TestProcessWithResultRewriteSkipsDangerous(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	cfgData := `
+[[commands.simple]]
+name = "python"
+commands = ["python"]
+
+[[rewrites.simple]]
+name = "use uv"
+match = ["python"]
+replace = "uv run python"
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(cfgData), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.Reset()
+	config.Init()
+	defer config.Reset()
+
+	// Command with dangerous pattern should be rejected as dangerous, not rewritten
+	input := `{"tool_name":"Bash","tool_input":{"command":"python $(whoami)"}}`
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected rejection, got approval")
+	}
+	var output Output
+	if err := json.Unmarshal([]byte(result.Output), &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	// Should be "ask" (not rewrite), because dangerous patterns reject before rewrite check
+	if output.HookSpecificOutput.PermissionDecision != DecisionAsk {
+		t.Errorf("decision = %q, want %q", output.HookSpecificOutput.PermissionDecision, DecisionAsk)
+	}
+	// Reason should NOT contain "rewrite"
+	if strings.Contains(output.HookSpecificOutput.PermissionDecisionReason, "rewrite") {
+		t.Errorf("reason should not mention rewrite for dangerous command, got: %q", output.HookSpecificOutput.PermissionDecisionReason)
 	}
 }
