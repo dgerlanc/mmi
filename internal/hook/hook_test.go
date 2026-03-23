@@ -483,6 +483,109 @@ func TestCheckDenyResultDeniedFalse(t *testing.T) {
 	}
 }
 
+func TestCheckRewrite(t *testing.T) {
+	simpleRules := []patterns.RewriteRule{
+		{
+			Regex:   regexp.MustCompile(`^python\b`),
+			Name:    "use uv",
+			Type:    "simple",
+			Pattern: `^python\b`,
+			Replace: "uv run python",
+		},
+		{
+			Regex:   regexp.MustCompile(`^python3\b`),
+			Name:    "use uv",
+			Type:    "simple",
+			Pattern: `^python3\b`,
+			Replace: "uv run python",
+		},
+	}
+
+	regexRules := []patterns.RewriteRule{
+		{
+			Regex:   regexp.MustCompile(`^pip3?\b`),
+			Name:    "use uv for pip",
+			Type:    "regex",
+			Pattern: `^pip3?\b`,
+			Replace: "uv pip",
+		},
+	}
+
+	tests := []struct {
+		name        string
+		coreCmd     string
+		rules       []patterns.RewriteRule
+		wantMatched bool
+		wantReplace string
+	}{
+		{
+			name:        "simple match preserves args",
+			coreCmd:     "python script.py --verbose",
+			rules:       simpleRules,
+			wantMatched: true,
+			wantReplace: "uv run python script.py --verbose",
+		},
+		{
+			name:        "simple match python3",
+			coreCmd:     "python3 script.py",
+			rules:       simpleRules,
+			wantMatched: true,
+			wantReplace: "uv run python script.py",
+		},
+		{
+			name:        "simple match bare command",
+			coreCmd:     "python",
+			rules:       simpleRules,
+			wantMatched: true,
+			wantReplace: "uv run python",
+		},
+		{
+			name:        "simple no match",
+			coreCmd:     "ruby script.rb",
+			rules:       simpleRules,
+			wantMatched: false,
+		},
+		{
+			name:        "regex match pip",
+			coreCmd:     "pip install requests",
+			rules:       regexRules,
+			wantMatched: true,
+			wantReplace: "uv pip install requests",
+		},
+		{
+			name:        "regex match pip3",
+			coreCmd:     "pip3 install requests",
+			rules:       regexRules,
+			wantMatched: true,
+			wantReplace: "uv pip install requests",
+		},
+		{
+			name:        "regex no match",
+			coreCmd:     "npm install",
+			rules:       regexRules,
+			wantMatched: false,
+		},
+		{
+			name:        "empty rules",
+			coreCmd:     "python script.py",
+			rules:       nil,
+			wantMatched: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CheckRewrite(tt.coreCmd, tt.rules)
+			if result.Matched != tt.wantMatched {
+				t.Errorf("Matched = %v, want %v", result.Matched, tt.wantMatched)
+			}
+			if tt.wantMatched && result.Replacement != tt.wantReplace {
+				t.Errorf("Replacement = %q, want %q", result.Replacement, tt.wantReplace)
+			}
+		})
+	}
+}
+
 // Helper types and functions for tests
 
 type patternDef struct {
