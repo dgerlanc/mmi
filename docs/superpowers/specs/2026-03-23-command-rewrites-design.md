@@ -9,7 +9,7 @@ Add a command rewriting feature to MMI that rejects commands matching rewrite ru
 - **Mechanism**: Reject with suggestion (not transparent rewrite). MMI returns `"ask"` with a reason containing the suggested command. Claude then re-submits the rewritten command, which goes through the full approval pipeline from scratch. This is safe by design — rewrites are hints, not bypasses.
 - **Pipeline position**: Rewrites are checked at the end of per-segment evaluation, after deny/wrapper/safe checks. Rewrites fire regardless of whether the command is safe-listed. Deny-matched and dangerous-pattern segments are skipped (no rewrite suggestion).
 - **Matching target**: Rewrites match against the wrapper-stripped core command, consistent with how the safe list works.
-- **Chain handling**: When a command chain has mixed approved and rewritten segments, MMI reconstructs the full corrected chain in the rejection message (e.g., `git status && uv run python script.py`).
+- **Chain handling**: When a command chain has mixed approved and rewritten segments, MMI reports individual segment rewrites in the rejection message (e.g., `use "uv run python script.py" instead of "python3 script.py"`). This avoids needing to preserve operator semantics across chain splitting.
 - **Architecture**: Inline in the hook pipeline (approach 1). No new packages — rewrite logic lives in existing `hook`, `config`, and `patterns` packages.
 
 ## Configuration
@@ -92,12 +92,11 @@ type RewriteResult struct {
 The segment evaluation order becomes:
 
 1. Dangerous patterns → reject (skip rewrite)
-2. Deny list on full segment → reject (skip rewrite)
-3. Strip wrappers
-4. Deny list on core command → reject (skip rewrite)
-5. Safe list check
-6. **Rewrite check on core command** (NEW — runs regardless of safe match result)
-7. If rewrite matched → override result to `REWRITE` rejection
+2. Strip wrappers
+3. Deny list on core command → reject (skip rewrite)
+4. Safe list check
+5. **Rewrite check on core command** (NEW — runs regardless of safe match result)
+6. If rewrite matched → override result to `REWRITE` rejection
 
 ### New function: `CheckRewrite`
 
@@ -113,9 +112,11 @@ func CheckRewrite(coreCmd string, rules []patterns.RewriteRule) RewriteResult
 
 If any segment triggered a rewrite (and none were deny-matched/dangerous):
 
-1. Reconstruct the full command: for each segment, use the rewritten version if rewritten, otherwise use the original
-2. Join segments with ` && `
-3. Return `FormatAsk()` with reason: `rewrite: use "git status && uv run python script.py" instead`
+1. Collect all rewrite suggestions as `"original" → "replacement"` pairs
+2. Return `FormatAsk()` with reason listing the rewrites, e.g.: `rewrite: use "uv run python script.py" instead of "python3 script.py"`
+3. For multiple rewrites in a chain, list each one: `rewrite: use "uv run python script.py" instead of "python3 script.py"; use "uv pip install foo" instead of "pip install foo"`
+
+Note: the reason message reports individual segment rewrites rather than reconstructing the full chain. This avoids needing to preserve operator semantics (`&&`, `||`, `|`, `;`) across splitting. Claude reconstructs the corrected chain from the individual suggestions.
 
 If the chain contains both deny-matched segments and rewrites, the deny takes precedence (existing behavior — deny produces a `"deny"` decision).
 
@@ -188,7 +189,7 @@ Rewrite rules (2):
 - Rewrite overrides safe match (python is safe but gets rewritten)
 - Rewrite skipped for deny-matched segments
 - Rewrite skipped for dangerous-pattern segments
-- Mixed chain: `git status && python3 script.py` → full corrected chain in rejection
+- Mixed chain: `git status && python3 script.py` → individual rewrite suggestions in rejection
 
 ### `config_test.go`
 - Parse `[[rewrites.simple]]` — valid config
@@ -200,5 +201,5 @@ Rewrite rules (2):
 
 ### `main_test.go` (integration)
 - End-to-end: command with rewrite rule → JSON output contains `"ask"` with rewrite suggestion
-- End-to-end: command chain with partial rewrite → full corrected chain in reason
+- End-to-end: command chain with partial rewrite → individual rewrite suggestions in reason
 - Audit log entry contains `REWRITE` rejection code with correct detail
