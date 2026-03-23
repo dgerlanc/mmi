@@ -55,6 +55,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	for _, p := range cfg.SafeCommands {
 		fmt.Printf("  - %s: %s\n", p.Name, p.Regex.String())
 	}
+	fmt.Println()
+
+	// Show rewrite rules
+	fmt.Printf("Rewrite rules: %d\n", len(cfg.RewriteRules))
+	for _, r := range cfg.RewriteRules {
+		fmt.Printf("  [%s]  %q\t%s → %s\n", r.Type, r.Name, r.Regex.String(), r.Replace)
+	}
 
 	return nil
 }
