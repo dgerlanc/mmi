@@ -15,6 +15,15 @@ type Pattern struct {
 	Pattern string // original pattern string
 }
 
+// RewriteRule holds a compiled match pattern and its replacement string.
+type RewriteRule struct {
+	Regex   *regexp.Regexp
+	Name    string
+	Type    string // "simple" or "regex"
+	Pattern string // original pattern string
+	Replace string // replacement string
+}
+
 // BuildFlagPattern converts a flag specification to a regex pattern.
 // "-f" becomes "(-f\s+)?"
 // "-f <arg>" becomes "(-f\s*\S+\s+)?" (allows -f10 or -f 10)
