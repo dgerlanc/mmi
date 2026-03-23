@@ -312,6 +312,26 @@ func TestMustCompile(t *testing.T) {
 	})
 }
 
+func TestRewriteRuleFields(t *testing.T) {
+	re := regexp.MustCompile(`^python\b`)
+	rule := RewriteRule{
+		Regex:   re,
+		Name:    "use uv",
+		Type:    "simple",
+		Pattern: `^python\b`,
+		Replace: "uv run python",
+	}
+	if rule.Regex != re {
+		t.Error("Regex field not set")
+	}
+	if rule.Name != "use uv" {
+		t.Errorf("Name = %q, want %q", rule.Name, "use uv")
+	}
+	if rule.Replace != "uv run python" {
+		t.Errorf("Replace = %q, want %q", rule.Replace, "uv run python")
+	}
+}
+
 func TestPattern_Match(t *testing.T) {
 	p := MustCompile(`^git\s+(status|diff)\b`, "git")
 
