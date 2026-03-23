@@ -18,6 +18,7 @@ const (
 	CodeUnparseable         = "UNPARSEABLE"
 	CodeDenyMatch           = "DENY_MATCH"
 	CodeNoMatch             = "NO_MATCH"
+	CodeRewrite             = "REWRITE"
 )
 
 // TimestampFormat is the format used for audit log timestamps.
