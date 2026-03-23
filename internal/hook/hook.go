@@ -363,6 +363,41 @@ func CheckDeny(cmd string, denyPatterns []patterns.Pattern) DenyResult {
 	return DenyResult{Denied: false}
 }
 
+// RewriteResult contains detailed information about a rewrite rule match.
+type RewriteResult struct {
+	Matched     bool
+	Name        string
+	Pattern     string
+	Replacement string // the fully rewritten core command
+}
+
+// CheckRewrite checks if a command matches a rewrite rule and returns the suggested replacement.
+// For simple rules, the matched prefix is replaced and remaining arguments are preserved.
+// For regex rules, Regexp.ReplaceAllString is used for full control.
+func CheckRewrite(coreCmd string, rules []patterns.RewriteRule) RewriteResult {
+	for _, r := range rules {
+		loc := r.Regex.FindStringIndex(coreCmd)
+		if loc == nil {
+			continue
+		}
+		var replacement string
+		if r.Type == "simple" {
+			// Replace the matched prefix, preserve the rest
+			replacement = r.Replace + coreCmd[loc[1]:]
+		} else {
+			// Regex: use ReplaceAllString for capture group support
+			replacement = r.Regex.ReplaceAllString(coreCmd, r.Replace)
+		}
+		return RewriteResult{
+			Matched:     true,
+			Name:        r.Name,
+			Pattern:     r.Pattern,
+			Replacement: replacement,
+		}
+	}
+	return RewriteResult{Matched: false}
+}
+
 // logAudit logs a command decision to the audit log.
 func logAudit(command string, approved bool, segments []audit.Segment, durationMs float64, sessionID, toolUseID, cwd, rawInput, rawOutput string) {
 	configPath := config.GetConfigPath()
