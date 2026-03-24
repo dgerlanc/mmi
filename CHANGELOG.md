@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-03-24
+
 ### Added
 - **Command rewrites**: New `[[rewrite]]` rules that reject commands with a message suggesting an alternative command, integrated into the hook pipeline and displayed in `mmi validate`
 
