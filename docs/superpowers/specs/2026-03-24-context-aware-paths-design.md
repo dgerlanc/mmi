@@ -35,11 +35,21 @@ paths = ["$PROJECT_ROOT"]
 **Rules:**
 - If a pattern has `paths`, target paths must fall within one of the listed allowed prefixes.
 - If a pattern has no `paths`, no path checking is performed (today's behavior).
-- `paths` is optional on any pattern type (simple, subcommand, command, regex).
+- `paths` is optional on `simple` and `subcommand` pattern types. It is **not supported** on `regex` patterns because there is no structured command name to look up in the descriptor registry. Config loading fails if `paths` is used on a regex pattern.
+- **Conflict resolution**: If a command appears in multiple patterns and the first match has no `paths`, but a later match does, the first match wins (no path checking). Users are responsible for not listing the same command in both path-constrained and unconstrained patterns. `mmi validate` should warn about this.
+
+### Data Flow: paths from Config to Approval
+
+The `paths` field flows through the system as follows:
+
+1. **TOML parsing** (`config.go`): `parseSection()` extracts the `paths` string slice from each entry alongside existing fields.
+2. **Pattern struct** (`patterns.go`): `patterns.Pattern` gains a `Paths []string` field. This carries the raw path expressions (e.g., `$PROJECT`, `/tmp`).
+3. **Safe matching** (`hook.go`): `CheckSafe()` returns a `SafeResult` that includes the `Paths []string` from the matched pattern.
+4. **Path checking** (`hook.go`): If `SafeResult.Paths` is non-empty, the new path checking step expands variables, extracts targets, and validates.
 
 ### Path Variables
 
-Two variables expand at evaluation time:
+Two variables expand at evaluation time (during step 6 of the approval flow, not at config load):
 
 | Variable | Expansion | Source |
 |----------|-----------|--------|
@@ -50,45 +60,71 @@ Two variables expand at evaluation time:
 
 Literal paths (e.g., `/tmp`, `/var/tmp`) are also supported and used as-is.
 
+**Note on variable syntax**: `$PROJECT` and `$PROJECT_ROOT` are MMI config variables, expanded at evaluation time within the `paths` field only. They are unrelated to shell variable expansion in command arguments (which is handled separately — see Ambiguous Cases). This distinction should be documented clearly in user-facing config documentation.
+
+**Assumption**: `cwd` from the hook input is always an absolute path (Claude Code provides it this way). If it is ever relative, path resolution will produce incorrect results. The implementation should validate that `cwd` is absolute and fail closed if not.
+
 ### Command Descriptors
 
 A registry of commands that MMI knows how to extract filesystem target paths from. Each descriptor defines how to parse the command's arguments and identify which arguments represent filesystem targets.
 
+Lives in a new `internal/cmdpath` package.
+
 ```go
 type CommandDescriptor struct {
-    Name       string
+    Name           string
     ExtractTargets func(args []string) (targets []string, unresolved []string)
 }
 ```
+
+The descriptor operates on the **core command after wrapper stripping** — the same string that `CheckSafe` matches against.
 
 #### Initial Command Set
 
 | Command | Category | Target extraction logic |
 |---------|----------|----------------------|
-| `rm` | Destructive | All non-flag args are targets |
-| `mv` | Destructive | All args are targets (source and dest) |
-| `chmod` | Destructive | All non-flag, non-mode args are targets |
-| `chown` | Destructive | All non-flag, non-owner args are targets |
+| `rm` | Destructive | All non-flag args after `--` are targets; before `--`, args not starting with `-` are targets |
+| `mv` | Destructive | All non-flag args are targets (source and dest); respects `--` |
+| `chmod` | Destructive | First non-flag arg is the mode (skip it), remaining non-flag args are targets; respects `--` |
+| `chown` | Destructive | First non-flag arg is the owner (skip it), remaining non-flag args are targets; respects `--` |
 | `cd` | Context-shifting | First non-flag arg is target |
 | `git -C` | Context-shifting | The arg after `-C` is the effective directory |
+
+All descriptors handle `--` (end-of-options marker) correctly: after `--`, all remaining arguments are treated as targets regardless of whether they start with `-`.
+
+#### Tilde Expansion
+
+Paths starting with `~` are common in shell commands (e.g., `rm ~/foo`). Since MMI does not have access to the shell's expansion, `~` is expanded to `$HOME` from the environment before path resolution. Paths starting with `~user` are treated as unresolvable (fail closed).
+
+#### Mode/Owner Parsing
+
+For `chmod`, the first non-flag argument is treated as a mode if it matches the pattern `^[0-7]{3,4}$` or `^[ugoa]*[+-=][rwxXst]+$` (numeric or symbolic mode). Otherwise it is treated as a target path. This heuristic is imprecise but acceptable given the fail-closed design — worst case, a path is misidentified as a mode and the command falls through to user approval.
+
+For `chown`, the first non-flag argument is treated as an owner if it matches `^[a-zA-Z0-9._-]+(:[a-zA-Z0-9._-]*)?$`. Same fail-closed rationale applies.
 
 #### Config Validation
 
 If a pattern specifies `paths` but lists a command that has no registered descriptor, config loading fails with an error. This ensures users get immediate feedback rather than silent misbehavior. `mmi validate` also surfaces this.
 
+For `simple` patterns that list multiple commands (e.g., `commands = ["rm", "mv"]`), **every** command in the list must have a registered descriptor if `paths` is present.
+
 ### Path Resolution
 
 1. **Extract targets** from command arguments using the command descriptor.
-2. **Resolve relative paths** against `cwd` from the hook input.
-3. **Clean paths** lexically using `filepath.Clean` (no symlink following).
-4. **Prefix check** each resolved target against the expanded allowed paths.
+2. **Expand tilde**: `~` → `$HOME`, `~user` → unresolved.
+3. **Resolve relative paths** against `cwd` from the hook input.
+4. **Clean paths** lexically using `filepath.Clean` (no symlink following).
+5. **Prefix check** each resolved target against the expanded allowed paths.
 
 #### Ambiguous Cases
 
 | Case | Behavior |
 |------|----------|
 | Glob patterns (`rm *.log`) | Resolve the base directory (`.` → cwd), check that directory is within bounds. The glob itself is not expanded. |
-| Variable expansion (`rm $FOO`) | Cannot resolve statically → fail closed (reject, ask user). |
+| Shell variable expansion (`rm $FOO`) | Cannot resolve statically → fail closed (reject, ask user). |
+| Tilde (`rm ~/foo`) | Expand `~` to `$HOME`, resolve normally. |
+| Tilde with user (`rm ~bob/foo`) | Cannot resolve → fail closed (reject, ask user). |
+| Brace expansion (`rm {a,b}.txt`) | Treat as literal path (fail closed — won't match allowed prefix). |
 | No arguments (`rm` with no args) | No targets to check → pass (the command will fail on its own). |
 
 ### Modified Approval Flow
@@ -111,6 +147,8 @@ The change adds step 6 after a safe pattern matches:
 6. **If matched pattern has `paths`: extract target paths → resolve against cwd → check each path is under an allowed prefix**
 7. Approve/reject
 
+**Permission decision for path violations**: `PATH_VIOLATION` produces an `ask` decision (not `deny`), consistent with the existing `NO_MATCH` behavior. The command is not inherently dangerous — it's just outside the allowed scope and needs user confirmation.
+
 ### Audit Logging
 
 Extend the audit segment with path resolution details:
@@ -124,7 +162,7 @@ type PathCheck struct {
 }
 ```
 
-New rejection code: `PATH_VIOLATION` — command matches a safe pattern but targets a path outside the allowed set.
+New rejection code: `PATH_VIOLATION` — command matches a safe pattern but targets a path outside the allowed set. Added to the existing constants in `internal/audit/audit.go`.
 
 The `PathCheck` struct is added to the existing `Segment` struct:
 
@@ -139,13 +177,32 @@ type Segment struct {
 }
 ```
 
+### Package Structure
+
+New package: `internal/cmdpath`
+
+Contains:
+- `CommandDescriptor` type and the descriptor registry
+- `ExtractTargets` functions for each supported command
+- `ResolvePaths` function (expand variables, resolve relative, clean, prefix check)
+- `ExpandPathVariables` function (expand `$PROJECT`, `$PROJECT_ROOT` in config paths)
+
 ### Testing Strategy
 
-- **Command descriptor tests**: For each command (rm, mv, chmod, chown, cd, git -C), test target path extraction with various flag combinations, relative/absolute paths, globs, unresolvable args.
-- **Path resolution tests**: Relative path resolution against cwd, `$PROJECT` and `$PROJECT_ROOT` expansion, `filepath.Clean` normalization (e.g., `../` traversal).
+- **Command descriptor tests** (`internal/cmdpath/`): For each command (rm, mv, chmod, chown, cd, git -C), test target path extraction with various flag combinations, relative/absolute paths, globs, unresolvable args, `--` handling, tilde expansion.
+- **Path resolution tests** (`internal/cmdpath/`): Relative path resolution against cwd, `$PROJECT` and `$PROJECT_ROOT` expansion, `filepath.Clean` normalization (e.g., `../` traversal), absolute cwd validation.
+- **Config validation tests** (`internal/config/`): `paths` on a command without a registered descriptor fails at load time. `paths` on regex patterns fails at load time. Warning for conflicting patterns (same command with and without paths).
 - **Integration tests**: End-to-end hook input with `paths` configured, verifying approve/reject based on target directory.
-- **Config validation tests**: `paths` on a command without a registered descriptor fails at load time.
 - **Audit tests**: `PathCheck` details appear correctly in audit log entries.
+
+### SPEC.md Updates Required
+
+The following sections of SPEC.md need updates after implementation:
+- Section 3.2 (Configuration): Add `Paths` field to Pattern struct
+- Section 4.1 (Processing Flow): Add path checking step
+- Section 5.2 (Configuration Format): Document `paths` field and variables
+- Section 8.7 (Rejection Codes): Add `PATH_VIOLATION`
+- New section: Command Descriptor Registry
 
 ## Future Work
 
