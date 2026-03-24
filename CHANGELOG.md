@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Command rewrites**: New `[[rewrite]]` rules that reject commands with a message suggesting an alternative command, integrated into the hook pipeline and displayed in `mmi validate`
+
+### Changed
+- Upgraded Go from 1.25 to 1.26
+
+### Performance
+- Build test binary once in integration tests instead of rebuilding per test
+
 ## [0.2.5] - 2026-03-13
 
 ## [0.2.4] - 2026-03-12
