@@ -6,7 +6,7 @@ MMI currently makes approval decisions based solely on the command string. It ha
 
 ## Goal
 
-Make approval decisions directory-aware for destructive and context-shifting commands. `rm` inside the project tree can be auto-approved; `rm` targeting `/etc` is rejected.
+Make approval decisions directory-aware for destructive commands. `rm` inside the project tree can be auto-approved; `rm` targeting `/etc` is rejected.
 
 ## Design
 
@@ -25,17 +25,12 @@ name = "read-only"
 commands = ["ls", "cat", "grep"]
 # No paths — works like today, no path checking
 
-[[commands.subcommand]]
-command = "git"
-subcommands = ["diff", "log", "status"]
-flags = ["-C <arg>"]
-paths = ["$PROJECT_ROOT"]
 ```
 
 **Rules:**
 - If a pattern has `paths`, target paths must fall within one of the listed allowed prefixes.
 - If a pattern has no `paths`, no path checking is performed (today's behavior).
-- `paths` is optional on `simple` and `subcommand` pattern types. It is **not supported** on `regex` patterns because there is no structured command name to look up in the descriptor registry. Config loading fails if `paths` is used on a regex pattern.
+- `paths` is optional on `simple` pattern types. It is **not supported** on `regex` or `subcommand` patterns because there is no straightforward way to map them to command descriptors for target extraction. Config loading fails if `paths` is used on a regex or subcommand pattern.
 - **Conflict resolution**: If a command appears in multiple patterns and the first match has no `paths`, but a later match does, the first match wins (no path checking). Users are responsible for not listing the same command in both path-constrained and unconstrained patterns. `mmi validate` should warn about this.
 
 ### Data Flow: paths from Config to Approval
@@ -87,8 +82,6 @@ The descriptor operates on the **core command after wrapper stripping** — the 
 | `mv` | Destructive | All non-flag args are targets (source and dest); respects `--` |
 | `chmod` | Destructive | First non-flag arg is the mode (skip it), remaining non-flag args are targets; respects `--` |
 | `chown` | Destructive | First non-flag arg is the owner (skip it), remaining non-flag args are targets; respects `--` |
-| `cd` | Context-shifting | First non-flag arg is target |
-| `git -C` | Context-shifting | The arg after `-C` is the effective directory |
 
 All descriptors handle `--` (end-of-options marker) correctly: after `--`, all remaining arguments are treated as targets regardless of whether they start with `-`.
 
@@ -189,9 +182,9 @@ Contains:
 
 ### Testing Strategy
 
-- **Command descriptor tests** (`internal/cmdpath/`): For each command (rm, mv, chmod, chown, cd, git -C), test target path extraction with various flag combinations, relative/absolute paths, globs, unresolvable args, `--` handling, tilde expansion.
+- **Command descriptor tests** (`internal/cmdpath/`): For each command (rm, mv, chmod, chown), test target path extraction with various flag combinations, relative/absolute paths, globs, unresolvable args, `--` handling, tilde expansion.
 - **Path resolution tests** (`internal/cmdpath/`): Relative path resolution against cwd, `$PROJECT` and `$PROJECT_ROOT` expansion, `filepath.Clean` normalization (e.g., `../` traversal), absolute cwd validation.
-- **Config validation tests** (`internal/config/`): `paths` on a command without a registered descriptor fails at load time. `paths` on regex patterns fails at load time. Warning for conflicting patterns (same command with and without paths).
+- **Config validation tests** (`internal/config/`): `paths` on a command without a registered descriptor fails at load time. `paths` on regex or subcommand patterns fails at load time. Warning for conflicting patterns (same command with and without paths).
 - **Integration tests**: End-to-end hook input with `paths` configured, verifying approve/reject based on target directory.
 - **Audit tests**: `PathCheck` details appear correctly in audit log entries.
 
@@ -206,6 +199,8 @@ The following sections of SPEC.md need updates after implementation:
 
 ## Future Work
 
+- **Context-shifting commands**: `cd`, `git -C`, and similar commands that change the effective working directory rather than targeting filesystem paths. These require a different descriptor model (checking where the command operates, not what files it targets) and interact with subcommand patterns in non-trivial ways.
 - **Variable expansion**: Use `mvdan.cc/sh/v3/interp` to expand shell variables before extracting paths. Would allow `rm $HOME/foo.txt` to resolve correctly.
 - **Additional command descriptors**: Extend the registry to cover write commands (`cp`, `touch`, `mkdir`, `tee`) and read commands if exfiltration boundaries become a concern.
+- **Subcommand and regex pattern support**: Extend `paths` to work with subcommand patterns once a descriptor model for flag-based target extraction (e.g., `git -C`) is designed.
 - **Symlink resolution**: Optionally resolve symlinks via `filepath.EvalSymlinks` to catch symlink-based path escapes.
