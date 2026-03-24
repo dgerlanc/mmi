@@ -72,7 +72,38 @@ type CommandDescriptor struct {
 }
 ```
 
-The descriptor operates on the **core command after wrapper stripping** — the same string that `CheckSafe` matches against.
+The descriptor operates on the **core command after wrapper stripping** — the same string that `CheckSafe` matches against. The `args` passed to `ExtractTargets` are the shell-split arguments *after* the command name itself. For example, given core command `rm -rf /tmp/foo bar.txt`, the args would be `["-rf", "/tmp/foo", "bar.txt"]`.
+
+Descriptors are not user-configurable — they are hardcoded in `internal/cmdpath` and registered at init time. Adding support for a new command requires a code change.
+
+#### Example: rm descriptor
+
+Given the command `rm -rf /tmp/foo ../bar.txt` with `cwd = /home/user/project`:
+
+1. **Core command** (after wrapper stripping): `rm -rf /tmp/foo ../bar.txt`
+2. **Shell-split args**: `["-rf", "/tmp/foo", "../bar.txt"]`
+3. **ExtractTargets** skips `-rf` (flag), returns:
+   - `targets = ["/tmp/foo", "../bar.txt"]`
+   - `unresolved = []`
+4. **Tilde expansion**: no tildes, skip
+5. **Resolve relative paths** against cwd `/home/user/project`:
+   - `/tmp/foo` → `/tmp/foo` (already absolute)
+   - `../bar.txt` → `/home/user/bar.txt`
+6. **Clean** via `filepath.Clean`: no change
+7. **Prefix check** against `paths = ["$PROJECT", "/tmp"]` (expanded to `["/home/user/project", "/tmp"]`):
+   - `/tmp/foo` — under `/tmp` ✓
+   - `/home/user/bar.txt` — not under `/home/user/project` or `/tmp` ✗ → **PATH_VIOLATION**
+
+Another example with `--`: `rm -- -weird-filename.txt`
+1. **Args**: `["--", "-weird-filename.txt"]`
+2. **ExtractTargets** sees `--`, treats everything after as targets:
+   - `targets = ["-weird-filename.txt"]` (not misinterpreted as a flag)
+
+Another example with variables: `rm $SOME_DIR/foo`
+1. **Args**: `["$SOME_DIR/foo"]`
+2. **ExtractTargets**: arg contains `$` → cannot resolve statically:
+   - `targets = []`, `unresolved = ["$SOME_DIR/foo"]`
+3. **Unresolved is non-empty** → fail closed (ask user)
 
 #### Initial Command Set
 
