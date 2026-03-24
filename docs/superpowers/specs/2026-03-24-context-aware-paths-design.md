@@ -31,7 +31,7 @@ commands = ["ls", "cat", "grep"]
 - If a pattern has `paths`, target paths must fall within one of the listed allowed prefixes.
 - If a pattern has no `paths`, no path checking is performed (today's behavior).
 - `paths` is optional on `simple` pattern types. It is **not supported** on `regex` or `subcommand` patterns because there is no straightforward way to map them to command descriptors for target extraction. Config loading fails if `paths` is used on a regex or subcommand pattern.
-- **Conflict resolution**: If a command appears in multiple patterns and the first match has no `paths`, but a later match does, the first match wins (no path checking). Users are responsible for not listing the same command in both path-constrained and unconstrained patterns. `mmi validate` should warn about this.
+- **Conflict resolution**: If a command appears in both a path-constrained pattern and an unconstrained pattern, config loading fails with an error. A command must have a single, unambiguous path policy — mixing constrained and unconstrained patterns for the same command is a config error.
 
 ### Data Flow: paths from Config to Approval
 
