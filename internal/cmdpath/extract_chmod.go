@@ -3,9 +3,14 @@ package cmdpath
 import "regexp"
 
 // chmodModePattern matches numeric modes (e.g., 755, 0644) and symbolic modes (e.g., u+x, go-rwx).
+// Note: does not match compound symbolic modes like "u+x,g-w". Those fall through to
+// path checking and will be rejected (fail closed), prompting the user for approval.
 var chmodModePattern = regexp.MustCompile(`^[0-7]{3,4}$|^[ugoa]*[+-=][rwxXst]+$`)
 
 // chownOwnerPattern matches user, user:group, :group, and user: patterns.
+// Note: this pattern also matches strings that look like filenames (e.g., "foo.txt").
+// In practice, chown always takes an owner as the first positional arg, so
+// misidentification only occurs with malformed commands that would fail at runtime anyway.
 var chownOwnerPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]*)?$`)
 
 func extractChmodTargets(args []string) ([]string, []string) {

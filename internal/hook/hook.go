@@ -543,6 +543,11 @@ func FormatDeny(reason string) string {
 
 // checkPaths validates that a command's filesystem targets are within allowed paths.
 func checkPaths(coreCmd string, configPaths []string, cwd string) audit.PathCheck {
+	// Validate cwd is absolute — if not, path resolution would be incorrect
+	if !filepath.IsAbs(cwd) {
+		return audit.PathCheck{Approved: false}
+	}
+
 	// Split the core command to get command name and args
 	parts := splitCommandArgs(coreCmd)
 	if len(parts) == 0 {
