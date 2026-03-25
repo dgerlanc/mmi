@@ -760,6 +760,110 @@ func TestBuildSimplePattern(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// End-to-End Path-Aware Approval Tests
+// =============================================================================
+
+func TestE2EPathAwareApproval(t *testing.T) {
+	pathConfig := `
+[[commands.simple]]
+name = "destructive"
+commands = ["rm", "mv"]
+paths = ["$PROJECT", "/tmp"]
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls", "cat"]
+`
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+	configPath := filepath.Join(tmpDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(pathConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.Reset()
+	defer config.Reset()
+	config.Init()
+
+	tests := []struct {
+		name     string
+		command  string
+		cwd      string
+		approved bool
+	}{
+		{
+			name:     "rm inside project approved",
+			command:  "rm foo.txt",
+			cwd:      "/home/user/project",
+			approved: true,
+		},
+		{
+			name:     "rm in /tmp approved",
+			command:  "rm /tmp/scratch.txt",
+			cwd:      "/home/user/project",
+			approved: true,
+		},
+		{
+			name:     "rm outside project rejected",
+			command:  "rm /etc/passwd",
+			cwd:      "/home/user/project",
+			approved: false,
+		},
+		{
+			name:     "rm with relative escape rejected",
+			command:  "rm ../../etc/passwd",
+			cwd:      "/home/user/project",
+			approved: false,
+		},
+		{
+			name:     "mv inside project approved",
+			command:  "mv old.txt new.txt",
+			cwd:      "/home/user/project",
+			approved: true,
+		},
+		{
+			name:     "mv to outside rejected",
+			command:  "mv foo.txt /opt/bar.txt",
+			cwd:      "/home/user/project",
+			approved: false,
+		},
+		{
+			name:     "ls anywhere approved (no paths)",
+			command:  "ls /etc",
+			cwd:      "/home/user/project",
+			approved: true,
+		},
+		{
+			name:     "rm with variable rejected",
+			command:  "rm $SOME_DIR/file",
+			cwd:      "/home/user/project",
+			approved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := hook.Input{
+				SessionID:      "test",
+				TranscriptPath: "/tmp/t",
+				Cwd:            tt.cwd,
+				PermissionMode: "default",
+				HookEventName:  "PreToolUse",
+				ToolName:       "Bash",
+				ToolInput:      hook.ToolInputData{Command: tt.command},
+				ToolUseID:      "test",
+			}
+			data, _ := json.Marshal(input)
+			result := hook.ProcessWithResult(bytes.NewReader(data))
+			if result.Approved != tt.approved {
+				t.Errorf("command %q: approved=%v, want %v (output: %s)",
+					tt.command, result.Approved, tt.approved, result.Output)
+			}
+		})
+	}
+}
+
 func TestBuildSubcommandPattern(t *testing.T) {
 	tests := []struct {
 		name        string
