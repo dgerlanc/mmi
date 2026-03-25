@@ -708,6 +708,117 @@ replace = "uv pip"
 	}
 }
 
+func TestPathsFieldParsedOnSimple(t *testing.T) {
+	configData := []byte(`
+[[commands.simple]]
+name = "destructive"
+commands = ["rm", "mv"]
+paths = ["$PROJECT", "/tmp"]
+`)
+	cfg, err := LoadConfig(configData)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	for _, p := range cfg.SafeCommands {
+		if p.Name != "destructive" {
+			continue
+		}
+		if len(p.Paths) != 2 {
+			t.Errorf("pattern %q: expected 2 paths, got %d", p.Name, len(p.Paths))
+		}
+		if len(p.Paths) >= 2 && (p.Paths[0] != "$PROJECT" || p.Paths[1] != "/tmp") {
+			t.Errorf("pattern %q: unexpected paths %v", p.Name, p.Paths)
+		}
+	}
+}
+
+func TestPathsFieldOmittedIsNil(t *testing.T) {
+	configData := []byte(`
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	cfg, err := LoadConfig(configData)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	for _, p := range cfg.SafeCommands {
+		if len(p.Paths) != 0 {
+			t.Errorf("pattern %q: expected nil paths, got %v", p.Name, p.Paths)
+		}
+	}
+}
+
+func TestPathsOnRegexFails(t *testing.T) {
+	configData := []byte(`
+[[commands.regex]]
+pattern = "^rm\\b"
+name = "rm-regex"
+paths = ["$PROJECT"]
+`)
+	_, err := LoadConfig(configData)
+	if err == nil {
+		t.Fatal("expected error for paths on regex pattern")
+	}
+	if !strings.Contains(err.Error(), "paths") {
+		t.Errorf("error should mention paths: %v", err)
+	}
+}
+
+func TestPathsOnSubcommandFails(t *testing.T) {
+	configData := []byte(`
+[[commands.subcommand]]
+command = "git"
+subcommands = ["status"]
+paths = ["$PROJECT"]
+`)
+	_, err := LoadConfig(configData)
+	if err == nil {
+		t.Fatal("expected error for paths on subcommand pattern")
+	}
+	if !strings.Contains(err.Error(), "paths") {
+		t.Errorf("error should mention paths: %v", err)
+	}
+}
+
+func TestPathsOnUnknownCommandFails(t *testing.T) {
+	configData := []byte(`
+[[commands.simple]]
+name = "unknown"
+commands = ["curl"]
+paths = ["$PROJECT"]
+`)
+	_, err := LoadConfig(configData)
+	if err == nil {
+		t.Fatal("expected error for paths on unknown command")
+	}
+	if !strings.Contains(err.Error(), "no path descriptor") {
+		t.Errorf("error should mention no path descriptor: %v", err)
+	}
+}
+
+func TestPathsConflictingPatternsFails(t *testing.T) {
+	configData := []byte(`
+[[commands.simple]]
+name = "constrained"
+commands = ["rm"]
+paths = ["$PROJECT"]
+
+[[commands.simple]]
+name = "unconstrained"
+commands = ["rm", "ls"]
+`)
+	_, err := LoadConfig(configData)
+	if err == nil {
+		t.Fatal("expected error for conflicting path constraints on rm")
+	}
+	if !strings.Contains(err.Error(), "conflicting") {
+		t.Errorf("error should mention conflicting: %v", err)
+	}
+}
+
 func TestGetConfigPathAfterReset(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("MMI_CONFIG", tmpDir)
