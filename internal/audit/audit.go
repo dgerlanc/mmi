@@ -19,6 +19,7 @@ const (
 	CodeDenyMatch           = "DENY_MATCH"
 	CodeNoMatch             = "NO_MATCH"
 	CodeRewrite             = "REWRITE"
+	CodePathViolation       = "PATH_VIOLATION"
 )
 
 // TimestampFormat is the format used for audit log timestamps.
@@ -41,6 +42,14 @@ type Entry struct {
 	ConfigError string    `json:"config_error,omitempty"`
 }
 
+// PathCheck contains path resolution and validation details.
+type PathCheck struct {
+	Targets    []string `json:"targets"`
+	Allowed    []string `json:"allowed"`
+	Unresolved []string `json:"unresolved,omitempty"`
+	Approved   bool     `json:"approved"`
+}
+
 // Segment represents a single command segment within a chained command.
 type Segment struct {
 	Command   string     `json:"command"`
@@ -48,6 +57,7 @@ type Segment struct {
 	Wrappers  []string   `json:"wrappers,omitempty"`
 	Match     *Match     `json:"match,omitempty"`
 	Rejection *Rejection `json:"rejection,omitempty"`
+	Paths     *PathCheck `json:"paths,omitempty"`
 }
 
 // Match contains information about the pattern that matched a command.
