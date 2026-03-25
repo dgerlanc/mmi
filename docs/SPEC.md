@@ -67,8 +67,11 @@ mmi/
 
 ```go
 type Pattern struct {
-    Regex *regexp.Regexp  // Compiled regex for matching
-    Name  string          // Human-readable description
+    Regex   *regexp.Regexp  // Compiled regex for matching
+    Name    string          // Human-readable description
+    Type    string          // simple, subcommand, command, regex
+    Pattern string          // Original pattern string
+    Paths   []string        // Allowed path prefixes (nil = no path checking)
 }
 ```
 
@@ -194,6 +197,15 @@ Claude Code Hook Input (JSON)
          │
          ▼
     ┌─────────────────────────────────┐
+    │ 6. Path Check (if pattern has   │
+    │    paths):                      │
+    │    a. Extract target paths      │
+    │    b. Resolve against cwd       │
+    │    c. Check allowed prefixes    │
+    └─────────────────────────────────┘
+         │
+         ▼
+    ┌─────────────────────────────────┐
     │ 4. Log to Audit Trail           │
     │    (all segments evaluated)     │
     └─────────────────────────────────┘
@@ -294,12 +306,25 @@ flags = ["-C <arg>"]
 pattern = '^(true|false|exit(\s+\d+)?)$'
 name = "shell builtin"
 
+# Path-constrained commands (targets must be within listed paths)
+[[commands.simple]]
+name = "destructive-project-only"
+commands = ["rm", "mv", "chmod", "chown"]
+paths = ["$PROJECT", "/tmp"]
+
 # Subshell configuration (optional)
 # [subshell]
 # allow_all = false  # set to true to permit all command substitution
 ```
 
-### 5.3 Pattern Types
+### 5.3 Path Variables
+
+| Variable | Expansion | Source |
+|----------|-----------|--------|
+| `$PROJECT` | The `cwd` from the hook input | Direct from Claude Code |
+| `$PROJECT_ROOT` | The main git repository root | Resolved via git, even from worktrees |
+
+### 5.4 Pattern Types
 
 | Type | Description | Example |
 |------|-------------|---------|
@@ -308,7 +333,7 @@ name = "shell builtin"
 | `command` | Command with flag patterns | `timeout` with `["<arg>"]` |
 | `regex` | Custom regex pattern | `^pytest\b` |
 
-### 5.4 Pattern Building
+### 5.5 Pattern Building
 
 | Input | Output Regex |
 |-------|--------------|
@@ -316,7 +341,7 @@ name = "shell builtin"
 | `BuildSubcommandPattern("git", ["status", "log"], [])` | `^git\s+(status\|log)\b` |
 | `BuildWrapperPattern("timeout", ["<arg>"])` | `^timeout\s+(\S+\s+)?` |
 
-### 5.5 Embedded Default Config
+### 5.6 Embedded Default Config
 
 - Restrictive by design (fail-secure)
 - Used when no config file exists
@@ -527,6 +552,7 @@ JSON-lines (one JSON object per line):
 | `UNPARSEABLE` | Shell syntax error | Incomplete syntax, unclosed quotes |
 | `DENY_MATCH` | Matched deny pattern | Command matches a deny list pattern |
 | `NO_MATCH` | No safe pattern matched | Command not in allowlist |
+| `PATH_VIOLATION` | Target path outside allowed directories | Command safe-listed but targets path not in `paths` prefixes |
 
 ### 8.8 Migration from v0
 
@@ -664,3 +690,36 @@ Build-time variables injected via ldflags:
 - `main.version` - Version tag
 - `main.commit` - Git commit hash
 - `main.date` - Build date
+
+---
+
+## 15. Command Descriptor Registry
+
+MMI includes a registry of command descriptors that define how to extract filesystem target paths from command arguments. This powers the path-aware approval feature.
+
+### 15.1 Supported Commands
+
+| Command | Target Extraction Logic |
+|---------|----------------------|
+| `rm` | All non-flag args are targets; respects `--` |
+| `mv` | All non-flag args are targets (source and dest); respects `--` |
+| `chmod` | First non-flag arg is the mode (skipped), remaining are targets |
+| `chown` | First non-flag arg is the owner (skipped), remaining are targets |
+
+### 15.2 Path Resolution
+
+1. Extract targets from command arguments using the descriptor
+2. Expand tilde (`~` → `$HOME`)
+3. Resolve relative paths against `cwd`
+4. Clean paths lexically (`filepath.Clean`)
+5. Check each target against allowed path prefixes
+
+### 15.3 Ambiguous Cases
+
+| Case | Behavior |
+|------|----------|
+| Glob patterns (`*.log`) | Check base directory |
+| Shell variables (`$FOO`) | Fail closed (reject) |
+| Tilde (`~/foo`) | Expand to `$HOME` |
+| `~user/foo` | Fail closed (reject) |
+| No arguments | Pass (command fails on its own) |
