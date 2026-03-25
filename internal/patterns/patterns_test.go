@@ -332,6 +332,22 @@ func TestRewriteRuleFields(t *testing.T) {
 	}
 }
 
+func TestPatternPathsField(t *testing.T) {
+	p := Pattern{
+		Regex:   regexp.MustCompile(`^rm\b`),
+		Name:    "rm",
+		Type:    "simple",
+		Pattern: `^rm\b`,
+		Paths:   []string{"$PROJECT", "/tmp"},
+	}
+	if len(p.Paths) != 2 {
+		t.Errorf("expected 2 paths, got %d", len(p.Paths))
+	}
+	if p.Paths[0] != "$PROJECT" {
+		t.Errorf("expected $PROJECT, got %s", p.Paths[0])
+	}
+}
+
 func TestPattern_Match(t *testing.T) {
 	p := MustCompile(`^git\s+(status|diff)\b`, "git")
 
