@@ -53,6 +53,8 @@ Two variables expand at evaluation time (during step 6 of the approval flow, not
 
 `$PROJECT_ROOT` is resolved by finding the git common directory (equivalent to `git rev-parse --git-common-dir`), which correctly traverses from worktrees to the main repo. For the common layout where worktrees live under `$PROJECT_ROOT/.claude/worktrees/`, using `$PROJECT_ROOT` in a pattern naturally covers both the main repo and all worktrees.
 
+**Worktrees outside the repo tree**: Git worktrees can be created at arbitrary locations (e.g., `git worktree add /tmp/my-worktree`). In this case, `$PROJECT_ROOT` does **not** cover the worktree directory since `/tmp/my-worktree` is not under the main repo root. To handle this, use both variables: `paths = ["$PROJECT_ROOT", "$PROJECT"]`. `$PROJECT` (cwd) covers the worktree itself, `$PROJECT_ROOT` covers the main repo for operations like merging back.
+
 Literal paths (e.g., `/tmp`, `/var/tmp`) are also supported and used as-is.
 
 **Note on variable syntax**: `$PROJECT` and `$PROJECT_ROOT` are MMI config variables, expanded at evaluation time within the `paths` field only. They are unrelated to shell variable expansion in command arguments (which is handled separately — see Ambiguous Cases). This distinction should be documented clearly in user-facing config documentation.
