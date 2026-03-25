@@ -134,6 +134,34 @@ pattern = '^pip3?\b'
 replace = "uv pip"
 ```
 
+### Path Constraints
+
+You can restrict destructive commands to specific directories using the `paths` field on simple patterns:
+
+```toml
+[[commands.simple]]
+name = "destructive-project-only"
+commands = ["rm", "mv", "chmod", "chown"]
+paths = ["$PROJECT", "/tmp"]
+```
+
+With this config, `rm foo.txt` is auto-approved when working inside the project directory, but `rm /etc/passwd` requires manual approval.
+
+**Path variables:**
+
+| Variable | Expands to |
+|----------|------------|
+| `$PROJECT` | Current working directory (from Claude Code) |
+| `$PROJECT_ROOT` | Main git repository root (even from worktrees) |
+
+**Rules:**
+- If a pattern has `paths`, all target paths must fall within an allowed prefix
+- If a pattern has no `paths`, it works like today (no path checking)
+- `paths` is only supported on `simple` patterns (not regex or subcommand)
+- A command cannot appear in both path-constrained and unconstrained patterns (config error)
+- Shell variables in arguments (`rm $FOO`) cannot be resolved and are rejected (fail closed)
+- Supported commands: `rm`, `mv`, `chmod`, `chown`
+
 ### Config Includes
 
 Split your configuration across multiple files:
@@ -224,6 +252,7 @@ When a command is submitted, `mmi`:
    - Checks deny list again on core command
    - Checks rewrite rules (fires regardless of safe list match)
    - Checks if core command matches safe patterns
+   - If the matched pattern has `paths`, validates that target paths are within allowed directories
 3. Approves only if ALL segments pass all checks and no rewrites match
 4. Logs all segments to audit trail (all segments are evaluated even if earlier ones fail)
 
@@ -320,6 +349,38 @@ Copy from `examples/` to enable language-specific commands:
 }
 ```
 
+**Rejected command (path violation):**
+```json
+{
+  "version": 1,
+  "tool_use_id": "toolu_xyz789",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-01-15T10:30:07.3Z",
+  "duration_ms": 0.55,
+  "command": "rm /etc/passwd",
+  "approved": false,
+  "segments": [
+    {
+      "command": "rm /etc/passwd",
+      "approved": false,
+      "match": {
+        "type": "simple",
+        "name": "destructive-project-only"
+      },
+      "paths": {
+        "targets": ["/etc/passwd"],
+        "allowed": ["/home/user/project", "/tmp"],
+        "approved": false
+      },
+      "rejection": {
+        "code": "PATH_VIOLATION"
+      }
+    }
+  ],
+  "cwd": "/home/user/project"
+}
+```
+
 **Rewritten command:**
 ```json
 {
@@ -368,6 +429,7 @@ Copy from `examples/` to enable language-specific commands:
 |-------|-------------|
 | `match` | Present when approved; contains `type`, `pattern`, and `name` |
 | `rejection` | Present when rejected; contains `code` and optionally `name`, `pattern`, `detail` |
+| `paths` | Present when path checking applies; contains `targets`, `allowed`, `unresolved`, `approved` |
 
 </details>
 
@@ -416,6 +478,7 @@ Rewrite rules from included config files are merged by appending. The first matc
 - Command chains are only approved if ALL segments are safe and no rewrites match
 - All segments are evaluated and logged even if earlier segments fail
 - Only explicitly allowlisted patterns are allowed
+- Path-constrained commands must target allowed directories; unresolvable paths (variables, `~user`) are rejected
 - Rewrite suggestions are hints, not bypasses — the rewritten command goes through the full approval pipeline from scratch
 - Shell loops (`while`, `for`) must be complete; their inner commands are extracted and validated individually
 
