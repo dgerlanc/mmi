@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/dgerlanc/mmi/internal/audit"
+	"github.com/dgerlanc/mmi/internal/cmdpath"
 	"github.com/dgerlanc/mmi/internal/config"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/dgerlanc/mmi/internal/patterns"
@@ -305,19 +308,54 @@ func ProcessWithResult(r io.Reader) Result {
 			continue
 		}
 
-		logger.Debug("matched pattern", "command", coreCmd, "pattern", safeResult.Name)
+		// Path checking: if pattern has paths, validate target directories
+		if len(safeResult.Paths) > 0 {
+			pathCheckResult := checkPaths(coreCmd, safeResult.Paths, input.Cwd)
+			if !pathCheckResult.Approved {
+				logger.Debug("rejected by path check", "command", coreCmd)
+				overallApproved = false
+				auditSegments = append(auditSegments, audit.Segment{
+					Command:  segment,
+					Approved: false,
+					Wrappers: wrappers,
+					Match: &audit.Match{
+						Type:    safeResult.Type,
+						Name:    safeResult.Name,
+						Pattern: safeResult.Pattern,
+					},
+					Paths: &pathCheckResult,
+					Rejection: &audit.Rejection{
+						Code: audit.CodePathViolation,
+					},
+				})
+				continue
+			}
 
-		// Approved segment
-		auditSegments = append(auditSegments, audit.Segment{
-			Command:  segment,
-			Approved: true,
-			Wrappers: wrappers,
-			Match: &audit.Match{
-				Type:    safeResult.Type,
-				Name:    safeResult.Name,
-				Pattern: safeResult.Pattern,
-			},
-		})
+			logger.Debug("matched pattern with path check", "command", coreCmd, "pattern", safeResult.Name)
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:  segment,
+				Approved: true,
+				Wrappers: wrappers,
+				Match: &audit.Match{
+					Type:    safeResult.Type,
+					Name:    safeResult.Name,
+					Pattern: safeResult.Pattern,
+				},
+				Paths: &pathCheckResult,
+			})
+		} else {
+			logger.Debug("matched pattern", "command", coreCmd, "pattern", safeResult.Name)
+			auditSegments = append(auditSegments, audit.Segment{
+				Command:  segment,
+				Approved: true,
+				Wrappers: wrappers,
+				Match: &audit.Match{
+					Type:    safeResult.Type,
+					Name:    safeResult.Name,
+					Pattern: safeResult.Pattern,
+				},
+			})
+		}
 
 		if len(wrappers) > 0 {
 			reasons = append(reasons, strings.Join(wrappers, "+")+" + "+safeResult.Name)
@@ -354,6 +392,7 @@ type SafeResult struct {
 	Name    string
 	Type    string // simple, subcommand, regex, command
 	Pattern string
+	Paths   []string
 }
 
 // CheckSafe checks if a command matches a safe pattern and returns details.
@@ -365,6 +404,7 @@ func CheckSafe(cmd string, safeCommands []patterns.Pattern) SafeResult {
 				Name:    p.Name,
 				Type:    p.Type,
 				Pattern: p.Pattern,
+				Paths:   p.Paths,
 			}
 		}
 	}
@@ -499,6 +539,125 @@ func FormatDeny(reason string) string {
 		return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"internal error"}}`
 	}
 	return string(data)
+}
+
+// checkPaths validates that a command's filesystem targets are within allowed paths.
+func checkPaths(coreCmd string, configPaths []string, cwd string) audit.PathCheck {
+	// Split the core command to get command name and args
+	parts := splitCommandArgs(coreCmd)
+	if len(parts) == 0 {
+		return audit.PathCheck{Approved: true}
+	}
+
+	commandName := parts[0]
+	args := parts[1:]
+
+	// Look up the command descriptor
+	desc, ok := cmdpath.LookupDescriptor(commandName)
+	if !ok {
+		// No descriptor — shouldn't happen if config validation passed, but fail closed
+		return audit.PathCheck{Approved: false}
+	}
+
+	// Extract targets from args
+	targets, unresolved := desc.ExtractTargets(args)
+
+	// Expand tilde in targets
+	var expandedTargets []string
+	for _, t := range targets {
+		expanded, ok := cmdpath.ExpandTilde(t)
+		if !ok {
+			unresolved = append(unresolved, t)
+			continue
+		}
+		expandedTargets = append(expandedTargets, expanded)
+	}
+
+	// Expand config path variables
+	allowed := cmdpath.ExpandPathVariables(configPaths, cwd, resolveGitRoot(cwd))
+
+	// If any args are unresolvable, fail closed
+	if len(unresolved) > 0 {
+		return audit.PathCheck{
+			Targets:    cmdpath.ResolveTargets(expandedTargets, cwd),
+			Allowed:    allowed,
+			Unresolved: unresolved,
+			Approved:   false,
+		}
+	}
+
+	// Resolve relative paths
+	resolvedTargets := cmdpath.ResolveTargets(expandedTargets, cwd)
+
+	// Check prefix
+	approved := len(resolvedTargets) == 0 || cmdpath.CheckPathPrefixes(resolvedTargets, allowed)
+
+	return audit.PathCheck{
+		Targets:  resolvedTargets,
+		Allowed:  allowed,
+		Approved: approved,
+	}
+}
+
+// splitCommandArgs splits a command string into command name and arguments
+// using the shell parser for correctness with quoted args.
+func splitCommandArgs(cmd string) []string {
+	parser := syntax.NewParser()
+	prog, err := parser.Parse(strings.NewReader(cmd), "")
+	if err != nil || len(prog.Stmts) == 0 {
+		return strings.Fields(cmd)
+	}
+
+	stmt := prog.Stmts[0]
+	call, ok := stmt.Cmd.(*syntax.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return strings.Fields(cmd)
+	}
+
+	printer := syntax.NewPrinter()
+	var parts []string
+	for _, word := range call.Args {
+		var buf strings.Builder
+		printer.Print(&buf, word)
+		parts = append(parts, buf.String())
+	}
+	return parts
+}
+
+// resolveGitRoot returns the git repository root for the given directory.
+// Returns cwd if git root cannot be determined.
+func resolveGitRoot(cwd string) string {
+	dir := cwd
+	for {
+		gitPath := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitPath)
+		if err == nil {
+			if info.IsDir() {
+				return dir
+			}
+			// .git file (worktree) — read it to find the real git dir
+			data, err := os.ReadFile(gitPath)
+			if err == nil {
+				content := strings.TrimSpace(string(data))
+				if strings.HasPrefix(content, "gitdir: ") {
+					gitDir := strings.TrimPrefix(content, "gitdir: ")
+					if !filepath.IsAbs(gitDir) {
+						gitDir = filepath.Join(dir, gitDir)
+					}
+					commonDir := filepath.Clean(filepath.Join(gitDir, "..", ".."))
+					if info, err := os.Stat(commonDir); err == nil && info.IsDir() {
+						return commonDir
+					}
+				}
+			}
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return cwd
+		}
+		dir = parent
+	}
 }
 
 // ErrUnparseable is returned when a command cannot be parsed.
