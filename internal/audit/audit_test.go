@@ -1124,3 +1124,88 @@ func TestLogWritesConfigFields(t *testing.T) {
 		t.Errorf("ConfigError = %q, want %q", parsed.ConfigError, "bad config")
 	}
 }
+
+func TestPathCheckSerialization(t *testing.T) {
+	segment := Segment{
+		Command:  "rm /etc/passwd",
+		Approved: false,
+		Paths: &PathCheck{
+			Targets:  []string{"/etc/passwd"},
+			Allowed:  []string{"/home/user/project", "/tmp"},
+			Approved: false,
+		},
+		Rejection: &Rejection{
+			Code: CodePathViolation,
+		},
+	}
+
+	data, err := json.Marshal(segment)
+	if err != nil {
+		t.Fatalf("failed to marshal segment: %v", err)
+	}
+
+	var decoded Segment
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal segment: %v", err)
+	}
+
+	if decoded.Paths == nil {
+		t.Fatal("expected Paths to be non-nil")
+	}
+	if len(decoded.Paths.Targets) != 1 || decoded.Paths.Targets[0] != "/etc/passwd" {
+		t.Errorf("unexpected targets: %v", decoded.Paths.Targets)
+	}
+	if decoded.Paths.Approved {
+		t.Error("expected Paths.Approved to be false")
+	}
+	if decoded.Rejection.Code != "PATH_VIOLATION" {
+		t.Errorf("expected PATH_VIOLATION, got %s", decoded.Rejection.Code)
+	}
+}
+
+func TestPathCheckWithUnresolved(t *testing.T) {
+	segment := Segment{
+		Command:  "rm $FOO/bar",
+		Approved: false,
+		Paths: &PathCheck{
+			Targets:    []string{},
+			Allowed:    []string{"/home/user/project"},
+			Unresolved: []string{"$FOO/bar"},
+			Approved:   false,
+		},
+	}
+
+	data, err := json.Marshal(segment)
+	if err != nil {
+		t.Fatalf("failed to marshal segment: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	paths := raw["paths"].(map[string]any)
+	if paths["unresolved"] == nil {
+		t.Error("expected unresolved to be present")
+	}
+}
+
+func TestPathCheckOmittedWhenNil(t *testing.T) {
+	segment := Segment{
+		Command:  "ls",
+		Approved: true,
+	}
+
+	data, err := json.Marshal(segment)
+	if err != nil {
+		t.Fatalf("failed to marshal segment: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, exists := raw["paths"]; exists {
+		t.Error("expected paths to be omitted when nil")
+	}
+}

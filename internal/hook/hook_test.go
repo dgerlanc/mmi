@@ -2043,3 +2043,222 @@ replace = "uv run python"
 		t.Errorf("reason should not mention rewrite for dangerous command, got: %q", output.HookSpecificOutput.PermissionDecisionReason)
 	}
 }
+
+// --- Task 8: CheckSafe with Paths ---
+
+func TestCheckSafeReturnsPaths(t *testing.T) {
+	p := patterns.Pattern{
+		Regex:   regexp.MustCompile(`^rm\b`),
+		Name:    "rm",
+		Type:    "simple",
+		Pattern: `^rm\b`,
+		Paths:   []string{"$PROJECT", "/tmp"},
+	}
+
+	result := CheckSafe("rm foo.txt", []patterns.Pattern{p})
+	if !result.Matched {
+		t.Fatal("expected match")
+	}
+	if len(result.Paths) != 2 {
+		t.Errorf("expected 2 paths, got %d", len(result.Paths))
+	}
+}
+
+func TestCheckSafeNoPathsWhenNil(t *testing.T) {
+	p := patterns.Pattern{
+		Regex:   regexp.MustCompile(`^ls\b`),
+		Name:    "ls",
+		Type:    "simple",
+		Pattern: `^ls\b`,
+	}
+
+	result := CheckSafe("ls -la", []patterns.Pattern{p})
+	if !result.Matched {
+		t.Fatal("expected match")
+	}
+	if len(result.Paths) != 0 {
+		t.Errorf("expected 0 paths, got %d", len(result.Paths))
+	}
+}
+
+// --- Task 9: Path checking integration tests ---
+
+func TestProcessWithResultPathApproved(t *testing.T) {
+	cleanup := setupPathTestConfig(t, `
+[[commands.simple]]
+name = "rm-safe"
+commands = ["rm"]
+paths = ["$PROJECT", "/tmp"]
+`)
+	defer cleanup()
+
+	logPath, logCleanup := setupTestAudit(t)
+	defer logCleanup()
+
+	input := makePathHookInput("rm /tmp/foo.txt", "/home/user/project")
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if !result.Approved {
+		t.Errorf("expected approved, got rejected: %s", result.Output)
+	}
+
+	entries := readPathAuditEntries(t, logPath)
+	if len(entries) == 0 {
+		t.Fatal("expected audit entry")
+	}
+	if entries[0].Segments[0].Paths == nil {
+		t.Error("expected Paths in audit segment")
+	}
+	if !entries[0].Segments[0].Paths.Approved {
+		t.Error("expected Paths.Approved = true")
+	}
+}
+
+func TestProcessWithResultPathViolation(t *testing.T) {
+	cleanup := setupPathTestConfig(t, `
+[[commands.simple]]
+name = "rm-safe"
+commands = ["rm"]
+paths = ["$PROJECT"]
+`)
+	defer cleanup()
+
+	logPath, logCleanup := setupTestAudit(t)
+	defer logCleanup()
+
+	input := makePathHookInput("rm /etc/passwd", "/home/user/project")
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected rejected for path violation")
+	}
+
+	// Should be "ask" not "deny"
+	var output Output
+	json.Unmarshal([]byte(result.Output), &output)
+	if output.HookSpecificOutput.PermissionDecision != "ask" {
+		t.Errorf("expected ask decision, got %s", output.HookSpecificOutput.PermissionDecision)
+	}
+
+	entries := readPathAuditEntries(t, logPath)
+	if len(entries) == 0 {
+		t.Fatal("expected audit entry")
+	}
+	seg := entries[0].Segments[0]
+	if seg.Rejection == nil || seg.Rejection.Code != audit.CodePathViolation {
+		t.Errorf("expected PATH_VIOLATION rejection, got %+v", seg.Rejection)
+	}
+}
+
+func TestProcessWithResultPathUnresolved(t *testing.T) {
+	cleanup := setupPathTestConfig(t, `
+[[commands.simple]]
+name = "rm-safe"
+commands = ["rm"]
+paths = ["$PROJECT"]
+`)
+	defer cleanup()
+
+	_, logCleanup := setupTestAudit(t)
+	defer logCleanup()
+
+	input := makePathHookInput("rm $SOME_VAR/file", "/home/user/project")
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected rejected for unresolvable path")
+	}
+}
+
+func TestProcessWithResultNoPathsNoCheck(t *testing.T) {
+	cleanup := setupPathTestConfig(t, `
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanup()
+
+	_, logCleanup := setupTestAudit(t)
+	defer logCleanup()
+
+	input := makePathHookInput("ls /etc/passwd", "/home/user/project")
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if !result.Approved {
+		t.Errorf("expected approved (no path checking), got rejected")
+	}
+}
+
+func TestProcessWithResultProjectVariable(t *testing.T) {
+	cleanup := setupPathTestConfig(t, `
+[[commands.simple]]
+name = "rm-safe"
+commands = ["rm"]
+paths = ["$PROJECT"]
+`)
+	defer cleanup()
+
+	_, logCleanup := setupTestAudit(t)
+	defer logCleanup()
+
+	input := makePathHookInput("rm foo.txt", "/home/user/project")
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if !result.Approved {
+		t.Errorf("expected approved for file in project, got rejected")
+	}
+}
+
+// Helper functions for path tests
+
+func setupPathTestConfig(t *testing.T, configContent string) func() {
+	t.Helper()
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	configPath := filepath.Join(tmpDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.Reset()
+	config.Init()
+	return func() {
+		os.Unsetenv("MMI_CONFIG")
+		config.Reset()
+	}
+}
+
+func makePathHookInput(command, cwd string) string {
+	input := Input{
+		SessionID:      "test-session",
+		TranscriptPath: "/tmp/transcript",
+		Cwd:            cwd,
+		PermissionMode: "default",
+		HookEventName:  "PreToolUse",
+		ToolName:       "Bash",
+		ToolInput:      ToolInputData{Command: command},
+		ToolUseID:      "test-tool-use",
+	}
+	data, _ := json.Marshal(input)
+	return string(data)
+}
+
+func readPathAuditEntries(t *testing.T, logPath string) []audit.Entry {
+	t.Helper()
+	audit.Close() // Ensure file is flushed
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read audit log: %v", err)
+	}
+	var entries []audit.Entry
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry audit.Entry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("failed to parse audit entry: %v", err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}

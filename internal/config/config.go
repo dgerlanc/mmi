@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dgerlanc/mmi/internal/cmdpath"
 	"github.com/dgerlanc/mmi/internal/constants"
 	"github.com/dgerlanc/mmi/internal/logger"
 	"github.com/dgerlanc/mmi/internal/patterns"
@@ -93,6 +95,15 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 					}
 					return nil, fmt.Errorf("%s.simple[%d]: \"commands\" field is required and must not be empty", sectionName, i)
 				}
+				paths := toStringSlice(entry["paths"])
+				if len(paths) > 0 && !isWrapper {
+					for _, cmd := range cmds {
+						if _, ok := cmdpath.LookupDescriptor(cmd); !ok {
+							return nil, fmt.Errorf("%s.simple[%d] %q: command %q has paths but no path descriptor registered (supported: %v)",
+								sectionName, i, name, cmd, cmdpath.RegisteredCommands())
+						}
+					}
+				}
 				for _, cmd := range cmds {
 					var pattern string
 					var patternName string
@@ -107,7 +118,7 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 					if err != nil {
 						return nil, fmt.Errorf("invalid pattern for command %q: %w", cmd, err)
 					}
-					result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "simple", Pattern: pattern})
+					result = append(result, patterns.Pattern{Regex: re, Name: patternName, Type: "simple", Pattern: pattern, Paths: paths})
 				}
 			}
 
@@ -134,6 +145,10 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 				if cmd == "" {
 					return nil, fmt.Errorf("%s.subcommand[%d]: \"command\" field is required and must not be empty", sectionName, i)
 				}
+				paths := toStringSlice(entry["paths"])
+				if len(paths) > 0 {
+					return nil, fmt.Errorf("%s.subcommand[%d] %q: \"paths\" is not supported on subcommand patterns", sectionName, i, cmd)
+				}
 				subs := toStringSlice(entry["subcommands"])
 				flags := toStringSlice(entry["flags"])
 				if len(subs) == 0 {
@@ -152,6 +167,13 @@ func parseSection(sectionData map[string]any, isWrapper bool, sectionName string
 			for i, entry := range entries {
 				pattern, _ := entry["pattern"].(string)
 				patternName, _ := entry["name"].(string)
+				paths := toStringSlice(entry["paths"])
+				if len(paths) > 0 {
+					if patternName != "" {
+						return nil, fmt.Errorf("%s.regex[%d] %q: \"paths\" is not supported on regex patterns", sectionName, i, patternName)
+					}
+					return nil, fmt.Errorf("%s.regex[%d]: \"paths\" is not supported on regex patterns", sectionName, i)
+				}
 				if pattern == "" {
 					if patternName != "" {
 						return nil, fmt.Errorf("%s.regex[%d] %q: \"pattern\" field is required and must not be empty", sectionName, i, patternName)
@@ -315,6 +337,10 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 		cfg.RewriteRules = append(cfg.RewriteRules, rewrites...)
 	}
 
+	if err := validatePathConflicts(cfg.SafeCommands); err != nil {
+		return nil, fmt.Errorf("path validation failed: %w", err)
+	}
+
 	return cfg, nil
 }
 
@@ -447,6 +473,48 @@ func parseRewriteSection(sectionData map[string]any) ([]patterns.RewriteRule, er
 	}
 
 	return result, nil
+}
+
+// validatePathConflicts checks that no command appears in both path-constrained and unconstrained patterns.
+func validatePathConflicts(safeCommands []patterns.Pattern) error {
+	type entry struct {
+		hasPaths bool
+		name     string
+	}
+	cmdEntries := make(map[string][]entry)
+
+	for _, p := range safeCommands {
+		if p.Type != "simple" {
+			continue
+		}
+		raw := p.Pattern
+		if strings.HasPrefix(raw, "^") && strings.HasSuffix(raw, `\b`) {
+			cmd := raw[1 : len(raw)-2]
+			cmdEntries[cmd] = append(cmdEntries[cmd], entry{
+				hasPaths: len(p.Paths) > 0,
+				name:     p.Name,
+			})
+		}
+	}
+
+	for cmd, entries := range cmdEntries {
+		if len(entries) < 2 {
+			continue
+		}
+		hasConstrained := false
+		hasUnconstrained := false
+		for _, e := range entries {
+			if e.hasPaths {
+				hasConstrained = true
+			} else {
+				hasUnconstrained = true
+			}
+		}
+		if hasConstrained && hasUnconstrained {
+			return fmt.Errorf("conflicting path constraints for command %q: appears in both path-constrained and unconstrained patterns", cmd)
+		}
+	}
+	return nil
 }
 
 // loadEmbeddedDefaults returns an empty config that denies all commands.

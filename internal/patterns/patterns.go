@@ -11,8 +11,9 @@ import (
 type Pattern struct {
 	Regex   *regexp.Regexp
 	Name    string
-	Type    string // simple, subcommand, command, regex
-	Pattern string // original pattern string
+	Type    string   // simple, subcommand, command, regex
+	Pattern string   // original pattern string
+	Paths   []string // allowed path prefixes (empty means no path checking)
 }
 
 // RewriteRule holds a compiled match pattern and its replacement string.
