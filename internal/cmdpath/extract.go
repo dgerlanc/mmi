@@ -85,7 +85,3 @@ func extractRmTargets(args []string) ([]string, []string) {
 func extractMvTargets(args []string) ([]string, []string) {
 	return extractSimpleTargets("mv", args)
 }
-
-// Stub implementations for chmod/chown — filled in next task
-func extractChmodTargets(args []string) ([]string, []string) { return nil, nil }
-func extractChownTargets(args []string) ([]string, []string) { return nil, nil }
