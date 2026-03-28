@@ -2043,3 +2043,216 @@ replace = "uv run python"
 		t.Errorf("reason should not mention rewrite for dangerous command, got: %q", output.HookSpecificOutput.PermissionDecisionReason)
 	}
 }
+
+func TestProcessWithResultUnmatchedPassthrough(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	logPath, cleanupAudit := setupTestAudit(t)
+	defer cleanupAudit()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "some_unknown_command"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected Approved = false for passthrough")
+	}
+	if !result.Passthrough {
+		t.Error("expected Passthrough = true")
+	}
+	if result.Output != "" {
+		t.Errorf("expected empty Output for passthrough, got %q", result.Output)
+	}
+
+	// Verify audit log has PASSTHROUGH code
+	entry := readLastAuditEntry(t, logPath)
+	if len(entry.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(entry.Segments))
+	}
+	if entry.Segments[0].Rejection == nil {
+		t.Fatal("expected rejection in segment")
+	}
+	if entry.Segments[0].Rejection.Code != audit.CodePassthrough {
+		t.Errorf("rejection code = %q, want %q", entry.Segments[0].Rejection.Code, audit.CodePassthrough)
+	}
+}
+
+func TestProcessWithResultUnmatchedReject(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[defaults]
+unmatched = "reject"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "some_unknown_command"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected Approved = false for reject")
+	}
+	if result.Passthrough {
+		t.Error("expected Passthrough = false for reject mode")
+	}
+	if !strings.Contains(result.Output, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny decision in output, got %q", result.Output)
+	}
+}
+
+func TestProcessWithResultUnmatchedAskDefault(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "some_unknown_command"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected Approved = false for ask")
+	}
+	if result.Passthrough {
+		t.Error("expected Passthrough = false for ask mode")
+	}
+	if !strings.Contains(result.Output, `"permissionDecision":"ask"`) {
+		t.Errorf("expected ask decision in output, got %q", result.Output)
+	}
+}
+
+func TestProcessWithResultPassthroughDenyStillBlocks(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[deny.simple]]
+name = "dangerous"
+commands = ["rm"]
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "rm -rf /"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected Approved = false for deny match")
+	}
+	if result.Passthrough {
+		t.Error("expected Passthrough = false when deny matched")
+	}
+	if !strings.Contains(result.Output, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny decision, got %q", result.Output)
+	}
+}
+
+func TestProcessWithResultPassthroughRewriteStillBlocks(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+
+[[rewrites.simple]]
+name = "use uv"
+match = ["python"]
+replace = "uv run python"
+`)
+	defer cleanupConfig()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "python script.py"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if result.Approved {
+		t.Error("expected Approved = false for rewrite match")
+	}
+	if result.Passthrough {
+		t.Error("expected Passthrough = false when rewrite matched")
+	}
+	if !strings.Contains(result.Output, `"permissionDecision":"deny"`) {
+		t.Errorf("expected deny decision for rewrite, got %q", result.Output)
+	}
+}
+
+func TestProcessWithResultPassthroughSafeStillApproves(t *testing.T) {
+	cleanupConfig := setupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer cleanupConfig()
+
+	input := `{
+		"session_id": "sess-1",
+		"tool_use_id": "tool-1",
+		"cwd": "/home",
+		"tool_name": "Bash",
+		"tool_input": {"command": "ls -la"}
+	}`
+
+	result := ProcessWithResult(strings.NewReader(input))
+
+	if !result.Approved {
+		t.Error("expected Approved = true for safe command in passthrough mode")
+	}
+	if result.Passthrough {
+		t.Error("expected Passthrough = false when command is safe")
+	}
+	if !strings.Contains(result.Output, `"permissionDecision":"allow"`) {
+		t.Errorf("expected allow decision, got %q", result.Output)
+	}
+}
