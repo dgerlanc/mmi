@@ -17,6 +17,8 @@ func runHook(cmd *cobra.Command, args []string) {
 		// In dry-run mode, output to stderr instead of JSON to stdout
 		if result.Approved {
 			fmt.Fprintf(os.Stderr, "APPROVED: %s (reason: %s)\n", result.Command, result.Reason)
+		} else if result.Passthrough {
+			fmt.Fprintf(os.Stderr, "PASSTHROUGH: %s\n", result.Command)
 		} else if result.Command != "" {
 			fmt.Fprintf(os.Stderr, "REJECTED: %s\n", result.Command)
 		} else {

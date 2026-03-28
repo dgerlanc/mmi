@@ -276,6 +276,96 @@ func TestRunHookInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestRunHookNormalModePassthrough(t *testing.T) {
+	resetGlobalState()
+
+	cleanup := testutil.SetupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer func() { cleanup(); resetGlobalState() }()
+
+	dryRun = false
+
+	input := `{"tool_name":"Bash","tool_input":{"command":"some_unknown_command"}}`
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+
+	stdinR, stdinW, _ := os.Pipe()
+	stdinW.WriteString(input)
+	stdinW.Close()
+	os.Stdin = stdinR
+
+	stdoutR, stdoutW, _ := os.Pipe()
+	os.Stdout = stdoutW
+
+	cmd := &cobra.Command{}
+	runHook(cmd, []string{})
+
+	os.Stdin = oldStdin
+	stdoutW.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, stdoutR)
+	output := buf.String()
+
+	// Passthrough should produce no output
+	if output != "" {
+		t.Errorf("expected empty output for passthrough, got: %s", output)
+	}
+}
+
+func TestRunHookDryRunPassthrough(t *testing.T) {
+	resetGlobalState()
+
+	cleanup := testutil.SetupTestConfig(t, `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "safe"
+commands = ["ls"]
+`)
+	defer func() { cleanup(); resetGlobalState() }()
+
+	dryRun = true
+	defer func() { dryRun = false }()
+
+	input := `{"tool_name":"Bash","tool_input":{"command":"some_unknown_command"}}`
+
+	oldStdin := os.Stdin
+	oldStderr := os.Stderr
+
+	stdinR, stdinW, _ := os.Pipe()
+	stdinW.WriteString(input)
+	stdinW.Close()
+	os.Stdin = stdinR
+
+	stderrR, stderrW, _ := os.Pipe()
+	os.Stderr = stderrW
+
+	cmd := &cobra.Command{}
+	runHook(cmd, []string{})
+
+	os.Stdin = oldStdin
+	stderrW.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	io.Copy(&buf, stderrR)
+	output := buf.String()
+
+	if !strings.Contains(output, "PASSTHROUGH") {
+		t.Errorf("expected 'PASSTHROUGH' in dry-run output, got: %s", output)
+	}
+}
+
 func TestRunHookNonBashTool(t *testing.T) {
 	cleanup := setupTestConfig(t)
 	defer cleanup()
