@@ -468,7 +468,7 @@ func TestRunValidateUnmatchedAppearsBeforeSubshell(t *testing.T) {
 
 	testConfig := `
 [defaults]
-unmatched = "reject"
+unmatched = "deny"
 
 [[commands.simple]]
 name = "test"

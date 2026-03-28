@@ -346,7 +346,7 @@ func ProcessWithResult(r io.Reader) Result {
 			case config.UnmatchedPassthrough:
 				output = ""
 				passthrough = true
-			case config.UnmatchedReject:
+			case config.UnmatchedDeny:
 				output = FormatDeny("command not in allow list")
 			default:
 				output = FormatAsk("command not in allow list")

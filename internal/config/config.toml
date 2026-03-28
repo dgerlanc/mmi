@@ -16,10 +16,10 @@
 # ============================================================
 
 # [defaults]
-# unmatched = "ask"  # "ask" (default), "passthrough", or "reject"
+# unmatched = "ask"  # "ask" (default), "passthrough", or "deny"
 #   ask:         return "ask" to Claude Code (user gets prompted)
 #   passthrough: return no output (Claude Code uses its own permission logic)
-#   reject:      return "deny" to Claude Code (command blocked)
+#   deny:        return "deny" to Claude Code (command blocked)
 
 # ============================================================
 # DENY LIST - patterns that are always rejected (checked first)

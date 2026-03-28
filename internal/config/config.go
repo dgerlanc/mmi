@@ -20,7 +20,7 @@ var defaultConfig []byte
 const (
 	UnmatchedAsk         = "ask"
 	UnmatchedPassthrough = "passthrough"
-	UnmatchedReject      = "reject"
+	UnmatchedDeny        = "deny"
 )
 
 // Config holds the compiled patterns from configuration.
@@ -36,7 +36,7 @@ type Config struct {
 	// RewriteRules are patterns that trigger command rewrite suggestions
 	RewriteRules []patterns.RewriteRule
 	// Unmatched controls behavior when a command doesn't match any pattern.
-	// Valid values: "ask" (default), "passthrough", "reject"
+	// Valid values: "ask" (default), "passthrough", "deny"
 	Unmatched string
 }
 
@@ -332,10 +332,10 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 	if defaultsSection, ok := raw["defaults"].(map[string]any); ok {
 		if unmatched, ok := defaultsSection["unmatched"].(string); ok {
 			switch unmatched {
-			case UnmatchedAsk, UnmatchedPassthrough, UnmatchedReject:
+			case UnmatchedAsk, UnmatchedPassthrough, UnmatchedDeny:
 				cfg.Unmatched = unmatched
 			default:
-				return nil, fmt.Errorf("invalid [defaults] unmatched value %q: must be \"ask\", \"passthrough\", or \"reject\"", unmatched)
+				return nil, fmt.Errorf("invalid [defaults] unmatched value %q: must be \"ask\", \"passthrough\", or \"deny\"", unmatched)
 			}
 		}
 	}
