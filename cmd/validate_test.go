@@ -372,6 +372,146 @@ commands = ["ls"]
 	}
 }
 
+func TestRunValidateShowsUnmatchedBehavior(t *testing.T) {
+	resetGlobalState()
+
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	testConfig := `
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "test"
+commands = ["ls"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	config.Init()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("runValidate() error = %v", err)
+	}
+
+	if !strings.Contains(output, "Unmatched command behavior: passthrough") {
+		t.Errorf("expected 'Unmatched command behavior: passthrough' in output, got:\n%s", output)
+	}
+}
+
+func TestRunValidateShowsUnmatchedDefaultAsk(t *testing.T) {
+	resetGlobalState()
+
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	testConfig := `
+[[commands.simple]]
+name = "test"
+commands = ["ls"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	config.Init()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("runValidate() error = %v", err)
+	}
+
+	if !strings.Contains(output, "Unmatched command behavior: ask") {
+		t.Errorf("expected 'Unmatched command behavior: ask' in output, got:\n%s", output)
+	}
+}
+
+func TestRunValidateUnmatchedAppearsBeforeSubshell(t *testing.T) {
+	resetGlobalState()
+
+	tmpDir := t.TempDir()
+	os.Setenv("MMI_CONFIG", tmpDir)
+	defer os.Unsetenv("MMI_CONFIG")
+
+	testConfig := `
+[defaults]
+unmatched = "reject"
+
+[[commands.simple]]
+name = "test"
+commands = ["ls"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.toml"), []byte(testConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	config.Init()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	err := runValidate(cmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if err != nil {
+		t.Fatalf("runValidate() error = %v", err)
+	}
+
+	unmatchedIdx := strings.Index(output, "Unmatched command behavior:")
+	subshellIdx := strings.Index(output, "Subshell allow all:")
+	if unmatchedIdx == -1 {
+		t.Fatal("'Unmatched command behavior:' not found in output")
+	}
+	if subshellIdx == -1 {
+		t.Fatal("'Subshell allow all:' not found in output")
+	}
+	if unmatchedIdx >= subshellIdx {
+		t.Error("'Unmatched command behavior' should appear before 'Subshell allow all'")
+	}
+}
+
 func TestRunValidateWithEmptyConfig(t *testing.T) {
 	resetGlobalState()
 
