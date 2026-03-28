@@ -280,6 +280,10 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			// overwrite a previous include's true. This is the safer default.
 			cfg.SubshellAllowAll = includeCfg.SubshellAllowAll
 			cfg.RewriteRules = append(cfg.RewriteRules, includeCfg.RewriteRules...)
+			// Unmatched: unconditional assignment — last value wins, same as SubshellAllowAll.
+			// If an included file omits [defaults], its zero value ("") will
+			// be normalized to "ask" at the end of parsing.
+			cfg.Unmatched = includeCfg.Unmatched
 		}
 	}
 

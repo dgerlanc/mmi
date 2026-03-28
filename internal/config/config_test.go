@@ -856,10 +856,10 @@ unmatched = "passthrough"
 	if err != nil {
 		t.Fatalf("LoadConfigWithDir failed: %v", err)
 	}
-	// Main config omits [defaults], so include's value is inherited
-	// But because main's zero value ("") overwrites, it defaults to "ask"
-	if cfg.Unmatched != "ask" {
-		t.Errorf("Unmatched = %q, want %q (omitted main defaults to ask, overwriting include)", cfg.Unmatched, "ask")
+	// Main config omits [defaults], so include's value survives.
+	// Same semantics as SubshellAllowAll: unconditional assignment, last value wins.
+	if cfg.Unmatched != "passthrough" {
+		t.Errorf("Unmatched = %q, want %q (inherited from include)", cfg.Unmatched, "passthrough")
 	}
 }
 
