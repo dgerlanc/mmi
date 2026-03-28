@@ -32,6 +32,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	fmt.Println("Configuration valid!")
 	fmt.Println()
 
+	// Show unmatched behavior (first, most important setting)
+	fmt.Printf("Unmatched command behavior: %s\n", cfg.Unmatched)
+
 	// Show subshell settings
 	fmt.Printf("Subshell allow all: %v\n", cfg.SubshellAllowAll)
 	fmt.Println()
