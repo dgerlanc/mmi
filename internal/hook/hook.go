@@ -35,10 +35,11 @@ const AuditVersion = 1
 
 // Result contains the outcome of processing a command.
 type Result struct {
-	Command  string // The command that was processed
-	Approved bool   // Whether the command was approved
-	Reason   string // The reason for approval/denial
-	Output   string // The JSON output sent to Claude Code
+	Command     string // The command that was processed
+	Approved    bool   // Whether the command was approved
+	Reason      string // The reason for approval/denial
+	Output      string // The JSON output sent to Claude Code
+	Passthrough bool   // Whether MMI abstained (no output, let Claude Code decide)
 }
 
 // ToolInputData represents the tool_input field in the Claude Code hook input
@@ -296,11 +297,15 @@ func ProcessWithResult(r io.Reader) Result {
 		if !safeResult.Matched {
 			logger.Debug("rejected unsafe command", "command", coreCmd)
 			overallApproved = false
+			rejCode := audit.CodeNoMatch
+			if cfg.Unmatched == config.UnmatchedPassthrough {
+				rejCode = audit.CodePassthrough
+			}
 			auditSegments = append(auditSegments, audit.Segment{
 				Command:   segment,
 				Approved:  false,
 				Wrappers:  wrappers,
-				Rejection: &audit.Rejection{Code: audit.CodeNoMatch},
+				Rejection: &audit.Rejection{Code: rejCode},
 			})
 			continue
 		}
@@ -330,16 +335,25 @@ func ProcessWithResult(r io.Reader) Result {
 	durationMs := float64(time.Since(startTime).Microseconds()) / 1000.0
 	if !overallApproved {
 		var output string
+		passthrough := false
 		if hasDenyMatch {
 			output = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"command matches deny list"}}`
 		} else if hasRewrite {
 			reason := strings.Join(rewriteSuggestions, "; ")
 			output = FormatDeny(reason)
 		} else {
-			output = FormatAsk("command not in allow list")
+			switch cfg.Unmatched {
+			case config.UnmatchedPassthrough:
+				output = ""
+				passthrough = true
+			case config.UnmatchedReject:
+				output = FormatDeny("command not in allow list")
+			default:
+				output = FormatAsk("command not in allow list")
+			}
 		}
 		logAudit(cmd, false, auditSegments, durationMs, input.SessionID, input.ToolUseID, input.Cwd, rawInput, output)
-		return Result{Command: cmd, Approved: false, Output: output}
+		return Result{Command: cmd, Approved: false, Output: output, Passthrough: passthrough}
 	}
 	reason := strings.Join(reasons, " | ")
 	logger.Debug("approved", "reason", reason)
