@@ -17,6 +17,12 @@ import (
 //go:embed config.toml
 var defaultConfig []byte
 
+const (
+	UnmatchedAsk         = "ask"
+	UnmatchedPassthrough = "passthrough"
+	UnmatchedReject      = "reject"
+)
+
 // Config holds the compiled patterns from configuration.
 type Config struct {
 	// WrapperPatterns are safe prefixes that can wrap commands
@@ -29,6 +35,9 @@ type Config struct {
 	SubshellAllowAll bool
 	// RewriteRules are patterns that trigger command rewrite suggestions
 	RewriteRules []patterns.RewriteRule
+	// Unmatched controls behavior when a command doesn't match any pattern.
+	// Valid values: "ask" (default), "passthrough", "reject"
+	Unmatched string
 }
 
 var (
@@ -313,6 +322,22 @@ func loadConfigWithIncludes(data []byte, configDir string, visited map[string]bo
 			return nil, fmt.Errorf("failed to parse rewrites: %w", err)
 		}
 		cfg.RewriteRules = append(cfg.RewriteRules, rewrites...)
+	}
+
+	// Parse defaults section
+	if defaultsSection, ok := raw["defaults"].(map[string]any); ok {
+		if unmatched, ok := defaultsSection["unmatched"].(string); ok {
+			switch unmatched {
+			case UnmatchedAsk, UnmatchedPassthrough, UnmatchedReject:
+				cfg.Unmatched = unmatched
+			default:
+				return nil, fmt.Errorf("invalid [defaults] unmatched value %q: must be \"ask\", \"passthrough\", or \"reject\"", unmatched)
+			}
+		}
+	}
+
+	if cfg.Unmatched == "" {
+		cfg.Unmatched = UnmatchedAsk
 	}
 
 	return cfg, nil
