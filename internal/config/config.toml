@@ -12,6 +12,16 @@
 #   [[*.regex]]      - pattern = "^regex$", name = "desc" - raw regex escape hatch
 
 # ============================================================
+# DEFAULTS - global behavior settings
+# ============================================================
+
+# [defaults]
+# unmatched = "ask"  # "ask" (default), "passthrough", or "reject"
+#   ask:         return "ask" to Claude Code (user gets prompted)
+#   passthrough: return no output (Claude Code uses its own permission logic)
+#   reject:      return "deny" to Claude Code (command blocked)
+
+# ============================================================
 # DENY LIST - patterns that are always rejected (checked first)
 # These override any approval patterns below
 # ============================================================
