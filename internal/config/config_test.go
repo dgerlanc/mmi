@@ -708,6 +708,161 @@ replace = "uv pip"
 	}
 }
 
+func TestLoadConfigUnmatchedDefaultsToAsk(t *testing.T) {
+	data := []byte(`
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Unmatched != "ask" {
+		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "ask")
+	}
+}
+
+func TestLoadConfigUnmatchedPassthrough(t *testing.T) {
+	data := []byte(`
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Unmatched != "passthrough" {
+		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "passthrough")
+	}
+}
+
+func TestLoadConfigUnmatchedReject(t *testing.T) {
+	data := []byte(`
+[defaults]
+unmatched = "reject"
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Unmatched != "reject" {
+		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "reject")
+	}
+}
+
+func TestLoadConfigUnmatchedAskExplicit(t *testing.T) {
+	data := []byte(`
+[defaults]
+unmatched = "ask"
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	cfg, err := LoadConfig(data)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Unmatched != "ask" {
+		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "ask")
+	}
+}
+
+func TestLoadConfigUnmatchedInvalidValue(t *testing.T) {
+	data := []byte(`
+[defaults]
+unmatched = "foo"
+
+[[commands.simple]]
+name = "test"
+commands = ["echo"]
+`)
+	_, err := LoadConfig(data)
+	if err == nil {
+		t.Error("expected error for invalid unmatched value")
+	}
+	if !strings.Contains(err.Error(), "unmatched") {
+		t.Errorf("error should mention 'unmatched', got: %v", err)
+	}
+}
+
+func TestLoadConfigUnmatchedIncludeOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	mainConfig := []byte(`
+include = ["extra.toml"]
+
+[defaults]
+unmatched = "passthrough"
+
+[[commands.simple]]
+name = "main"
+commands = ["echo"]
+`)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), mainConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extraConfig := []byte(`
+[defaults]
+unmatched = "reject"
+`)
+	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigWithDir(mainConfig, dir)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDir failed: %v", err)
+	}
+	// Main config is processed after includes, so main's value wins
+	if cfg.Unmatched != "passthrough" {
+		t.Errorf("Unmatched = %q, want %q (main config should override include)", cfg.Unmatched, "passthrough")
+	}
+}
+
+func TestLoadConfigUnmatchedFromInclude(t *testing.T) {
+	dir := t.TempDir()
+
+	mainConfig := []byte(`
+include = ["extra.toml"]
+
+[[commands.simple]]
+name = "main"
+commands = ["echo"]
+`)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), mainConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extraConfig := []byte(`
+[defaults]
+unmatched = "passthrough"
+`)
+	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfigWithDir(mainConfig, dir)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDir failed: %v", err)
+	}
+	// Main config omits [defaults], so include's value is inherited
+	// But because main's zero value ("") overwrites, it defaults to "ask"
+	if cfg.Unmatched != "ask" {
+		t.Errorf("Unmatched = %q, want %q (omitted main defaults to ask, overwriting include)", cfg.Unmatched, "ask")
+	}
+}
+
 func TestGetConfigPathAfterReset(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("MMI_CONFIG", tmpDir)
