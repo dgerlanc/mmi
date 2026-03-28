@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Unmatched command behavior**: New `[defaults]` config section with `unmatched` field to control what happens when a command matches no allow/deny rules (`ask`, `passthrough`, or `deny`)
+- `PASSTHROUGH` audit rejection code for commands approved via passthrough mode
+- Unmatched command behavior displayed in `mmi validate` output
+
 ## [0.2.6] - 2026-03-24
 
 ### Added
