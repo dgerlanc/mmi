@@ -19,6 +19,7 @@ const (
 	CodeDenyMatch           = "DENY_MATCH"
 	CodeNoMatch             = "NO_MATCH"
 	CodeRewrite             = "REWRITE"
+	CodePassthrough         = "PASSTHROUGH"
 )
 
 // TimestampFormat is the format used for audit log timestamps.
