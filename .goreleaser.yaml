@@ -63,7 +63,7 @@ release:
 
     Mother May I? - Claude Code Bash command approval hook
 
-homebrew_casks:
+brews:
   - name: mmi
     repository:
       owner: dgerlanc
@@ -71,5 +71,5 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/dgerlanc/mmi
     description: "Claude Code Bash command approval hook"
-    binaries:
-      - mmi
+    install: |
+      bin.install "mmi"
