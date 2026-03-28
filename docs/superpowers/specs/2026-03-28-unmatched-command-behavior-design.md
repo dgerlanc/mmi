@@ -30,7 +30,7 @@ unmatched = "ask"  # "ask" (default), "passthrough", or "reject"
 
 ### Include semantics
 
-Same as `SubshellAllowAll` — unconditional assignment, last value wins. If an included file omits `[defaults]`, its zero value (empty string) overwrites any previous value back to the `"ask"` default. This matches the existing conservative precedent: the safer default wins when a file is silent.
+Same as `SubshellAllowAll` — unconditional assignment, last value wins. If the main config omits `[defaults]`, an included file's explicit value survives. If an included file omits `[defaults]`, its zero value (empty string) is normalized to `"ask"` at the end of parsing.
 
 ## Config Struct Changes
 
