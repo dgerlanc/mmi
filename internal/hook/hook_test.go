@@ -2091,10 +2091,10 @@ commands = ["ls"]
 	}
 }
 
-func TestProcessWithResultUnmatchedReject(t *testing.T) {
+func TestProcessWithResultUnmatchedDeny(t *testing.T) {
 	cleanupConfig := setupTestConfig(t, `
 [defaults]
-unmatched = "reject"
+unmatched = "deny"
 
 [[commands.simple]]
 name = "safe"

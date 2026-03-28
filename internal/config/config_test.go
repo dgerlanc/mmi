@@ -741,10 +741,10 @@ commands = ["echo"]
 	}
 }
 
-func TestLoadConfigUnmatchedReject(t *testing.T) {
+func TestLoadConfigUnmatchedDeny(t *testing.T) {
 	data := []byte(`
 [defaults]
-unmatched = "reject"
+unmatched = "deny"
 
 [[commands.simple]]
 name = "test"
@@ -754,8 +754,8 @@ commands = ["echo"]
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
-	if cfg.Unmatched != "reject" {
-		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "reject")
+	if cfg.Unmatched != "deny" {
+		t.Errorf("Unmatched = %q, want %q", cfg.Unmatched, "deny")
 	}
 }
 
@@ -814,7 +814,7 @@ commands = ["echo"]
 
 	extraConfig := []byte(`
 [defaults]
-unmatched = "reject"
+unmatched = "deny"
 `)
 	if err := os.WriteFile(filepath.Join(dir, "extra.toml"), extraConfig, 0644); err != nil {
 		t.Fatal(err)
