@@ -78,10 +78,15 @@ type byteRange struct {
 	start, end int
 }
 
-// findQuotedHeredocRanges parses a command and returns byte ranges of heredoc content
-// where the delimiter is quoted (single or double quotes). Quoted heredocs don't perform
-// shell expansion, so backticks and $() inside them are literal text, not command substitution.
-func findQuotedHeredocRanges(cmd string) []byteRange {
+// findLiteralRanges parses a command and returns byte ranges of regions where shell
+// expansion does not occur, so $() and backticks inside them are literal text. This
+// covers two cases:
+//   - Single-quoted strings ('...'): the shell never expands anything inside.
+//   - Quoted heredocs (<<'EOF' or <<"EOF"): same, by virtue of the quoted delimiter.
+//
+// Double-quoted strings are NOT included: $() and backticks are still expanded inside
+// double quotes.
+func findLiteralRanges(cmd string) []byteRange {
 	parser := syntax.NewParser()
 	prog, err := parser.Parse(strings.NewReader(cmd), "")
 	if err != nil {
@@ -89,39 +94,35 @@ func findQuotedHeredocRanges(cmd string) []byteRange {
 	}
 
 	var ranges []byteRange
+	addRange := func(start, end int) {
+		if start < end && start >= 0 && end <= len(cmd) {
+			ranges = append(ranges, byteRange{start: start, end: end})
+		}
+	}
+
 	syntax.Walk(prog, func(node syntax.Node) bool {
-		redir, ok := node.(*syntax.Redirect)
-		if !ok {
-			return true
-		}
-
-		// Check if this is a heredoc operator (<< or <<-)
-		if redir.Op != syntax.Hdoc && redir.Op != syntax.DashHdoc {
-			return true
-		}
-
-		// Check if the delimiter is quoted
-		if redir.Word == nil || len(redir.Word.Parts) == 0 {
-			return true
-		}
-
-		isQuoted := false
-		for _, part := range redir.Word.Parts {
-			switch part.(type) {
-			case *syntax.SglQuoted, *syntax.DblQuoted:
-				isQuoted = true
+		switch n := node.(type) {
+		case *syntax.SglQuoted:
+			addRange(int(n.Pos().Offset()), int(n.End().Offset()))
+		case *syntax.Redirect:
+			// Heredoc with a quoted delimiter — no expansion inside the body.
+			if n.Op != syntax.Hdoc && n.Op != syntax.DashHdoc {
+				return true
+			}
+			if n.Word == nil || len(n.Word.Parts) == 0 || n.Hdoc == nil {
+				return true
+			}
+			isQuoted := false
+			for _, part := range n.Word.Parts {
+				switch part.(type) {
+				case *syntax.SglQuoted, *syntax.DblQuoted:
+					isQuoted = true
+				}
+			}
+			if isQuoted {
+				addRange(int(n.Hdoc.Pos().Offset()), int(n.Hdoc.End().Offset()))
 			}
 		}
-
-		// If quoted and has heredoc content, record the range
-		if isQuoted && redir.Hdoc != nil {
-			start := int(redir.Hdoc.Pos().Offset())
-			end := int(redir.Hdoc.End().Offset())
-			if start < end && start >= 0 && end <= len(cmd) {
-				ranges = append(ranges, byteRange{start: start, end: end})
-			}
-		}
-
 		return true
 	})
 
@@ -129,9 +130,10 @@ func findQuotedHeredocRanges(cmd string) []byteRange {
 }
 
 // containsDangerousPattern checks if the command contains dangerous patterns ($( or backticks)
-// while excluding content inside quoted heredocs where these characters are literal.
+// while excluding content inside single-quoted strings and quoted heredocs where these
+// characters are literal.
 func containsDangerousPattern(cmd string) bool {
-	excludeRanges := findQuotedHeredocRanges(cmd)
+	excludeRanges := findLiteralRanges(cmd)
 
 	// If no heredocs, do the simple check
 	if len(excludeRanges) == 0 {
