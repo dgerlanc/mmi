@@ -172,7 +172,7 @@ EOF`,
 		},
 		{
 			name:      "single quotes adjacent to double quotes",
-			cmd:       `echo 'safe `+"`text`"+`'"unsafe `+"`text`"+`"`,
+			cmd:       `echo 'safe ` + "`text`" + `'"unsafe ` + "`text`" + `"`,
 			dangerous: true,
 		},
 	}
