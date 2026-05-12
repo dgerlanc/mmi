@@ -136,6 +136,45 @@ EOF`,
 	EOF`,
 			dangerous: true,
 		},
+
+		// Single-quoted strings: shell does not expand $() or backticks inside.
+		// BigQuery uses backticks to quote table identifiers, which collides with
+		// the simple substring check unless we recognize the quoting context.
+		{
+			name:      "backticks inside single-quoted string",
+			cmd:       "bq query 'SELECT * FROM `proj.ds.tbl`'",
+			dangerous: false,
+		},
+		{
+			name:      "command substitution inside single-quoted string",
+			cmd:       `echo 'literal $(whoami) here'`,
+			dangerous: false,
+		},
+		{
+			name:      "backticks in double-quoted string still dangerous",
+			cmd:       "echo \"hello `whoami`\"",
+			dangerous: true,
+		},
+		{
+			name:      "$() in double-quoted string still dangerous",
+			cmd:       `echo "hello $(whoami)"`,
+			dangerous: true,
+		},
+		{
+			name:      "dangerous pattern outside single-quoted string",
+			cmd:       "echo $(whoami) 'safe `text`'",
+			dangerous: true,
+		},
+		{
+			name:      "single-quoted string after dangerous pattern",
+			cmd:       "echo `whoami` && echo 'safe'",
+			dangerous: true,
+		},
+		{
+			name:      "single quotes adjacent to double quotes",
+			cmd:       `echo 'safe ` + "`text`" + `'"unsafe ` + "`text`" + `"`,
+			dangerous: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -148,23 +187,25 @@ EOF`,
 	}
 }
 
-func TestFindQuotedHeredocRanges(t *testing.T) {
+func TestFindLiteralRanges(t *testing.T) {
 	tests := []struct {
 		name       string
 		cmd        string
 		wantRanges int
 	}{
 		{
-			name:       "no heredoc",
+			name:       "no quoting",
 			cmd:        `echo hello`,
 			wantRanges: 0,
 		},
 		{
+			// One range for the 'EOF' delimiter (a single-quoted string in its own
+			// right), one for the heredoc body.
 			name: "single quoted heredoc",
 			cmd: `cat << 'EOF'
 content
 EOF`,
-			wantRanges: 1,
+			wantRanges: 2,
 		},
 		{
 			name: "double quoted heredoc",
@@ -188,7 +229,7 @@ EOF1
 cat << 'EOF2'
 content2
 EOF2`,
-			wantRanges: 2,
+			wantRanges: 4,
 		},
 		{
 			name: "mixed quoted and unquoted heredocs",
@@ -198,15 +239,38 @@ EOF1
 cat << EOF2
 content2
 EOF2`,
+			wantRanges: 2,
+		},
+		{
+			name:       "single-quoted string",
+			cmd:        `echo 'hello world'`,
 			wantRanges: 1,
+		},
+		{
+			name:       "double-quoted string is not literal",
+			cmd:        `echo "hello world"`,
+			wantRanges: 0,
+		},
+		{
+			name:       "multiple single-quoted strings",
+			cmd:        `echo 'one' 'two' 'three'`,
+			wantRanges: 3,
+		},
+		{
+			// 'literal' + 'EOF' delimiter + heredoc body.
+			name: "single-quoted string and quoted heredoc",
+			cmd: `echo 'literal' && cat << 'EOF'
+content
+EOF`,
+			wantRanges: 3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ranges := findQuotedHeredocRanges(tt.cmd)
+			ranges := findLiteralRanges(tt.cmd)
 			if len(ranges) != tt.wantRanges {
-				t.Errorf("findQuotedHeredocRanges(%q) returned %d ranges, want %d", tt.cmd, len(ranges), tt.wantRanges)
+				t.Errorf("findLiteralRanges(%q) returned %d ranges, want %d", tt.cmd, len(ranges), tt.wantRanges)
 			}
 		})
 	}
